@@ -1,0 +1,12 @@
+node_modules/
+lib/
+*.tgz
+.DS_Store
+*.log
+.smoke-home/
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
+
+# generated test output from smoke-testing the image providers
+/dsh-image-gen/
