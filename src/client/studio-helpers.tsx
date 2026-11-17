@@ -95,14 +95,18 @@ export interface RecentItemActions {
   select(item: GalleryItem): void
   favorite(item: GalleryItem): void
   toast(message: string): void
+  /** Arm click-to-place on the infinite canvas (Studio rail, infinite surface). */
+  place?(item: GalleryItem): void
 }
 
-export const RecentItem = memo(function RecentItem({ item, active, mode, lang, actions }: {
+export const RecentItem = memo(function RecentItem({ item, active, mode, lang, actions, placeMode }: {
   item: GalleryItem
   active: boolean
   mode: 'select' | 'favorite'
   lang: 'zh' | 'en'
   actions: RecentItemActions
+  /** True while the Studio shows the infinite canvas: the send affordance arms placement. */
+  placeMode?: boolean | undefined
 }) {
   const [setRef, inView] = useInView<HTMLButtonElement>()
   const [hovered, setHovered] = useState(false)
@@ -142,7 +146,7 @@ export const RecentItem = memo(function RecentItem({ item, active, mode, lang, a
             : <ImagePlus size={18} />}
         </div>
       </button>
-      <GalleryCanvasButton item={item} lang={lang} className="dsh-ig-recent-send" onToast={actions.toast} />
+      <GalleryCanvasButton item={item} lang={lang} className="dsh-ig-recent-send" onToast={actions.toast} onArm={placeMode ? actions.place : undefined} />
     </div>
   )
 })

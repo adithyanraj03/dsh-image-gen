@@ -9,9 +9,11 @@
  * public `imageGenViewer.open()` service mounts it as a standalone overlay.
  */
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { Check, ChevronLeft, ChevronRight, Copy, Maximize, PenLine, Trash2, X, ZoomIn, ZoomOut } from 'lucide-react'
+import { Check, ChevronLeft, ChevronRight, Circle, Copy, Download, EyeOff, ListOrdered, Maximize, Minus, MoveUpRight, Pen, PenLine, PenTool, Save, Square, Trash2, Type, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react'
 import { useImageTransform } from './use-image-transform.js'
 import { renderAnnotationImage, type Annotation, type CommitEntry } from './annotations.js'
+import { buildMarkupOps, MARKUP_COLORS, MARKUP_STROKES, markedFileName, nextStepNumber, renderMarkupImage, screenToNormalized, type MarkupCommitEntry, type MarkupDrawOp, type MarkupPoint, type MarkupShape, type MarkupStroke, type MarkupTool } from './markup.js'
+import { copyImageBlob, downloadBlobUrl } from '../browser-image-utils.js'
 import type { ImageViewerService, ViewerAction, ViewerItem } from './viewer-service.js'
 
 export const VIEWER_KEYS = [
@@ -19,6 +21,11 @@ export const VIEWER_KEYS = [
   'igvRegions', 'igvRegionHint', 'igvNote', 'igvNotePlaceholder', 'igvRemoveNote',
   'igvCopyNotes', 'igvCopied', 'igvCopyFailed', 'igvPrevious', 'igvNext', 'igvZoomHint',
   'igvLoading', 'igvLoadFailed', 'igvRetry', 'igvAddingDraft', 'igvDraftFailed', 'igvCloseWithoutDraft',
+  'igvMarkup', 'igvCancelMarkup', 'igvMarkupHint',
+  'igvToolPen', 'igvToolLine', 'igvToolArrow', 'igvToolRect', 'igvToolEllipse', 'igvToolStep', 'igvToolRedact', 'igvToolText',
+  'igvMarkupColor', 'igvMarkupStroke', 'igvStrokeS', 'igvStrokeM', 'igvStrokeL',
+  'igvMarkupUndo', 'igvMarkupClear', 'igvMarkupSave', 'igvMarkupSaveHint',
+  'igvMarkupCopy', 'igvMarkupDownload', 'igvMarkupDownloaded', 'igvMarkupSaved', 'igvMarkupNoHost', 'igvMarkupBakeFailed', 'igvMarkupTextPrompt',
 ] as const
 export type ViewerKey = typeof VIEWER_KEYS[number]
 export type ViewerT = (key: ViewerKey, values?: Record<string, string>) => string
@@ -32,6 +39,55 @@ export function noteText(annotations: Annotation[], t: ViewerT): string {
     const label = fill(t('igvNote'), { value: String(index + 1) })
     return `${label} (${Math.round(annotation.x * 100)}%, ${Math.round(annotation.y * 100)}%): ${annotation.note.trim()}`
   }).filter(line => !line.endsWith(': ')).join('\n')
+}
+
+const MARKUP_TOOLS: { tool: MarkupTool; key: ViewerKey; Icon: typeof Pen }[] = [
+  { tool: 'pen', key: 'igvToolPen', Icon: Pen },
+  { tool: 'line', key: 'igvToolLine', Icon: Minus },
+  { tool: 'arrow', key: 'igvToolArrow', Icon: MoveUpRight },
+  { tool: 'rect', key: 'igvToolRect', Icon: Square },
+  { tool: 'ellipse', key: 'igvToolEllipse', Icon: Circle },
+  { tool: 'step', key: 'igvToolStep', Icon: ListOrdered },
+  { tool: 'redact', key: 'igvToolRedact', Icon: EyeOff },
+  { tool: 'text', key: 'igvToolText', Icon: Type },
+]
+
+/** SVG element for one natural-pixel draw op (mirrors drawMarkupOps on canvas). */
+function MarkupOpElement({ op }: { op: MarkupDrawOp }) {
+  switch (op.kind) {
+    case 'dot':
+      return <circle cx={op.x} cy={op.y} r={op.radius} fill={op.color} />
+    case 'polyline':
+      return <polyline points={op.points.map(point => `${point.x},${point.y}`).join(' ')} fill="none" stroke={op.color} strokeWidth={op.width} strokeLinecap="round" strokeLinejoin="round" />
+    case 'line':
+      return <line x1={op.from.x} y1={op.from.y} x2={op.to.x} y2={op.to.y} stroke={op.color} strokeWidth={op.width} strokeLinecap="round" />
+    case 'arrow':
+      return <g><line x1={op.from.x} y1={op.from.y} x2={op.to.x} y2={op.to.y} stroke={op.color} strokeWidth={op.width} strokeLinecap="round" /><polygon points={op.head.map(point => `${point.x},${point.y}`).join(' ')} fill={op.color} /></g>
+    case 'rect':
+      return <rect x={op.x} y={op.y} width={op.w} height={op.h} fill="none" stroke={op.color} strokeWidth={op.width} />
+    case 'ellipse':
+      return <ellipse cx={op.cx} cy={op.cy} rx={op.rx} ry={op.ry} fill="none" stroke={op.color} strokeWidth={op.width} />
+    case 'step':
+      return <g><circle cx={op.cx} cy={op.cy} r={op.radius} fill={op.color} stroke={op.contrast} strokeWidth={op.ringWidth} /><text x={op.cx} y={op.cy} fill={op.contrast} fontSize={op.fontSize} fontWeight={700} fontFamily="sans-serif" textAnchor="middle" dominantBaseline="central">{op.label}</text></g>
+    case 'redact':
+      return <rect x={op.x} y={op.y} width={op.w} height={op.h} fill={op.color} fillOpacity={op.opacity} />
+    case 'text':
+      return <text x={op.x} y={op.y} fill={op.color} fontSize={op.fontSize} fontWeight={600} fontFamily="sans-serif" dominantBaseline="hanging">{op.text}</text>
+  }
+}
+
+/**
+ * Drawing overlay: a child of the transformed surface, so it sits EXACTLY over
+ * the image at any zoom/pan. The viewBox is the image's natural pixel size and
+ * shapes are the same draw plan the bake replays — preview == baked pixels.
+ */
+function MarkupOverlay({ shapes, draft, width, height }: { shapes: MarkupShape[]; draft: MarkupShape | undefined; width: number; height: number }) {
+  const ops = buildMarkupOps(draft !== undefined ? [...shapes, draft] : shapes, width, height)
+  return (
+    <svg className="igv-markup-overlay" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" aria-hidden="true">
+      {ops.map((op, index) => <MarkupOpElement key={index} op={op} />)}
+    </svg>
+  )
 }
 
 export interface ImageLightboxProps {
@@ -50,6 +106,8 @@ export interface ImageLightboxProps {
   onPrev?(): void
   onNext?(): void
   commitAnnotations?: ((entries: CommitEntry[]) => Promise<void>) | undefined
+  /** Markup save: attach baked marked PNGs to the composer draft (no send). */
+  commitMarkup?: ((entries: MarkupCommitEntry[]) => Promise<void>) | undefined
   onImageError?(item: ViewerItem, currentSrc: string): void
   loading?: boolean | undefined
 }
@@ -70,10 +128,11 @@ function GenericAction({ action, annotations, item, onDone }: { action: ViewerAc
 }
 
 export function ImageLightbox(props: ImageLightboxProps) {
-  const { items, index, onIndex, onClose, t, service, topMeta, prompt, actions, viewerActions, commitAnnotations, onImageError } = props
+  const { items, index, onIndex, onClose, t, service, topMeta, prompt, actions, viewerActions, commitAnnotations, commitMarkup, onImageError } = props
   const item = items[index]
   const identity = `${item?.id ?? ''}:${item?.src ?? ''}`
-  const { transform, transformRef, dragging, pixelScale, geometry, stageRef, surfaceRef, imageRef, fit, actual, measure, setZoomAt, resetGesture, pointerHandlers } = useImageTransform(identity)
+  const [markup, setMarkup] = useState(false)
+  const { transform, transformRef, dragging, pixelScale, geometry, stageRef, surfaceRef, imageRef, fit, actual, measure, setZoomAt, resetGesture, pointerHandlers } = useImageTransform(identity, !markup)
 
   const [imageState, setImageState] = useState<'loading' | 'ready' | 'error'>('loading')
   const [attempt, setAttempt] = useState(0)
@@ -92,6 +151,38 @@ export function ImageLightbox(props: ImageLightboxProps) {
   const committingRef = useRef(false)
   committingRef.current = committing
 
+  // Markup mode: shapes live in image-normalized coordinates for this viewing
+  // session only; Save bakes them into a PNG, Exit/Escape discards them.
+  const [markupTool, setMarkupTool] = useState<MarkupTool>('pen')
+  const [markupColor, setMarkupColor] = useState<string>('#ff3b30')
+  const [markupStroke, setMarkupStroke] = useState<MarkupStroke>('M')
+  const [markupShapes, setMarkupShapes] = useState<MarkupShape[]>([])
+  const [markupDraft, setMarkupDraft] = useState<MarkupShape | undefined>(undefined)
+  const [markupNotice, setMarkupNotice] = useState<string | undefined>(undefined)
+  const markupRef = useRef(markup)
+  markupRef.current = markup
+  const markupShapesRef = useRef(markupShapes)
+  markupShapesRef.current = markupShapes
+  const markupDraftRef = useRef(markupDraft)
+  const drawingPointerRef = useRef<number | undefined>(undefined)
+  const noticeTimerRef = useRef<number | undefined>(undefined)
+  const updateMarkupDraft = useCallback((next: MarkupShape | undefined): void => {
+    markupDraftRef.current = next
+    setMarkupDraft(next)
+  }, [])
+  const notifyMarkup = useCallback((message: string): void => {
+    setMarkupNotice(message)
+    if (noticeTimerRef.current !== undefined) window.clearTimeout(noticeTimerRef.current)
+    noticeTimerRef.current = window.setTimeout(() => { setMarkupNotice(undefined); noticeTimerRef.current = undefined }, 2600)
+  }, [])
+  useEffect(() => () => { if (noticeTimerRef.current !== undefined) window.clearTimeout(noticeTimerRef.current) }, [])
+  const exitMarkup = useCallback((): void => {
+    setMarkup(false); setMarkupShapes([]); updateMarkupDraft(undefined)
+    drawingPointerRef.current = undefined
+    resetGesture()
+    rootRef.current?.focus()
+  }, [resetGesture, updateMarkupDraft])
+
   // Capture the opening annotation state once per mount for change detection.
   useEffect(() => {
     const snapshot = service?.getAnnotationsSnapshot() ?? {}
@@ -100,8 +191,10 @@ export function ImageLightbox(props: ImageLightboxProps) {
 
   useEffect(() => {
     setAnnotating(false); setSelected(undefined); setCopied(false); setCopyFailed(false)
+    setMarkup(false); setMarkupShapes([]); updateMarkupDraft(undefined); setMarkupNotice(undefined)
+    drawingPointerRef.current = undefined
     setImageState(props.loading ? 'loading' : 'loading'); setAttempt(0)
-  }, [identity])
+  }, [identity, updateMarkupDraft])
 
   const annotations = item ? (annotationsByImage[item.id] ?? []) : []
   const setAnnotations = useCallback((update: Annotation[] | ((prev: Annotation[]) => Annotation[])) => {
@@ -152,19 +245,31 @@ export function ImageLightbox(props: ImageLightboxProps) {
       if (event.defaultPrevented || event.isComposing) return
       if (event.key === 'Escape') {
         event.preventDefault(); event.stopPropagation()
+        if (markupRef.current) {
+          // First Escape cancels the in-progress shape; the next exits markup
+          // and discards every un-saved mark.
+          if (markupDraftRef.current !== undefined) { updateMarkupDraft(undefined); drawingPointerRef.current = undefined }
+          else exitMarkup()
+          return
+        }
         if (event.target instanceof Element && event.target.closest('.igv-inline-note') !== null) {
           setSelected(undefined); rootRef.current?.focus(); return
         }
         void doClose(); return
+      }
+      if (markupRef.current && (event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'z') {
+        event.preventDefault(); event.stopPropagation()
+        setMarkupShapes(current => current.slice(0, -1))
+        return
       }
       if (event.ctrlKey || event.metaKey || event.altKey) return
       const editing = event.target instanceof Element && event.target.closest('input,textarea,select,[contenteditable="true"]') !== null
       if (!editing && ['ArrowLeft', 'ArrowRight', '+', '=', '-', 'f', 'F'].includes(event.key)) event.stopPropagation()
       if (!editing && event.key === 'ArrowLeft') { event.preventDefault(); goPrev() }
       else if (!editing && event.key === 'ArrowRight') { event.preventDefault(); goNext() }
-      else if (!editing && (event.key === '+' || event.key === '=')) { event.preventDefault(); const box = stageRef.current?.getBoundingClientRect(); if (box) setZoomAt(transformRef.current.zoom * 1.2, box.left + box.width / 2, box.top + box.height / 2) }
-      else if (!editing && event.key === '-') { event.preventDefault(); const box = stageRef.current?.getBoundingClientRect(); if (box) setZoomAt(transformRef.current.zoom / 1.2, box.left + box.width / 2, box.top + box.height / 2) }
-      else if (!editing && event.key.toLowerCase() === 'f') { event.preventDefault(); fit() }
+      else if (!editing && !markupRef.current && (event.key === '+' || event.key === '=')) { event.preventDefault(); const box = stageRef.current?.getBoundingClientRect(); if (box) setZoomAt(transformRef.current.zoom * 1.2, box.left + box.width / 2, box.top + box.height / 2) }
+      else if (!editing && !markupRef.current && event.key === '-') { event.preventDefault(); const box = stageRef.current?.getBoundingClientRect(); if (box) setZoomAt(transformRef.current.zoom / 1.2, box.left + box.width / 2, box.top + box.height / 2) }
+      else if (!editing && !markupRef.current && event.key.toLowerCase() === 'f') { event.preventDefault(); fit() }
       else if (event.key === 'Tab') {
         const controls = [...(rootRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],input:not(:disabled),textarea:not(:disabled),[tabindex]:not([tabindex="-1"])') ?? [])]
         const first = controls[0], last = controls.at(-1)
@@ -175,7 +280,7 @@ export function ImageLightbox(props: ImageLightboxProps) {
     const root = rootRef.current
     root?.addEventListener('keydown', onKeyDown)
     return () => { document.body.style.overflow = previousOverflow; root?.removeEventListener('keydown', onKeyDown) }
-  }, [doClose, goPrev, goNext, fit, setZoomAt])
+  }, [doClose, goPrev, goNext, fit, setZoomAt, exitMarkup, updateMarkupDraft])
 
   useEffect(() => {
     if (focusNote === undefined) return
@@ -213,20 +318,130 @@ export function ImageLightbox(props: ImageLightboxProps) {
     }
   }
 
+  const toggleMarkup = (): void => {
+    if (committingRef.current) return
+    if (markup) { exitMarkup(); return }
+    resetGesture()
+    setAnnotating(false); setSelected(undefined)
+    setMarkup(true)
+  }
+
+  // Pointer → normalized image point. The measured surface rect already carries
+  // zoom/pan (and the stage's asymmetric padding), so marks land under the cursor.
+  const markupPointFromEvent = (event: React.PointerEvent): MarkupPoint | undefined => {
+    const surface = surfaceRef.current
+    if (!surface) return undefined
+    const rect = surface.getBoundingClientRect()
+    if (rect.width <= 0 || rect.height <= 0) return undefined
+    return screenToNormalized(event.clientX, event.clientY, rect)
+  }
+  const onMarkupPointerDown = (event: React.PointerEvent): void => {
+    if (!markupRef.current || imageState !== 'ready' || event.button !== 0 || drawingPointerRef.current !== undefined) return
+    if ((event.target as Element).closest('button,a,input,textarea,select')) return
+    const point = markupPointFromEvent(event)
+    if (!point) return
+    event.preventDefault()
+    const base = { id: crypto.randomUUID(), color: markupColor, stroke: markupStroke }
+    if (markupTool === 'step') {
+      setMarkupShapes(current => [...current, { ...base, tool: 'step', points: [point], step: nextStepNumber(current) }])
+      return
+    }
+    if (markupTool === 'text') {
+      const text = window.prompt(t('igvMarkupTextPrompt'))?.trim()
+      if (text) setMarkupShapes(current => [...current, { ...base, tool: 'text', points: [point], text }])
+      return
+    }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    drawingPointerRef.current = event.pointerId
+    updateMarkupDraft({ ...base, tool: markupTool, points: markupTool === 'pen' ? [point] : [point, point] })
+  }
+  const onMarkupPointerMove = (event: React.PointerEvent): void => {
+    if (drawingPointerRef.current !== event.pointerId) return
+    const point = markupPointFromEvent(event)
+    const current = markupDraftRef.current
+    if (!point || !current) return
+    if (current.tool === 'pen') {
+      const last = current.points[current.points.length - 1]
+      if (last && Math.hypot(point.x - last.x, point.y - last.y) < 0.002) return
+      updateMarkupDraft({ ...current, points: [...current.points, point] })
+    } else {
+      updateMarkupDraft({ ...current, points: [current.points[0] ?? point, point] })
+    }
+  }
+  const onMarkupPointerUp = (event: React.PointerEvent): void => {
+    if (drawingPointerRef.current !== event.pointerId) return
+    drawingPointerRef.current = undefined
+    const draft = markupDraftRef.current
+    updateMarkupDraft(undefined)
+    if (draft) setMarkupShapes(current => [...current, draft])
+  }
+  const onMarkupPointerCancel = (event: React.PointerEvent): void => {
+    if (drawingPointerRef.current !== event.pointerId) return
+    drawingPointerRef.current = undefined
+    updateMarkupDraft(undefined)
+  }
+
+  const readOriginalBlob = async (): Promise<Blob> => {
+    if (!item) throw new Error('No image')
+    if (item.readBlob) return item.readBlob()
+    const response = await fetch(item.src)
+    if (!response.ok) throw new Error(`Image download failed: ${response.status}`)
+    return response.blob()
+  }
+  /** Bake at natural resolution: original pixels + every shape scaled to them. */
+  const bakeMarked = async (): Promise<Blob> => renderMarkupImage(await readOriginalBlob(), markupShapesRef.current)
+
+  const saveMarkup = async (): Promise<void> => {
+    if (committingRef.current || !item || markupShapesRef.current.length === 0) return
+    if (!commitMarkup) { notifyMarkup(t('igvMarkupNoHost')); return }
+    setCommitting(true); setCommitError(false)
+    let blob: Blob
+    try { blob = await bakeMarked() }
+    catch { setCommitting(false); notifyMarkup(t('igvMarkupBakeFailed')); return }
+    try {
+      await commitMarkup([{ item: { src: item.src, name: item.name }, blob }])
+      setCommitting(false)
+      setMarkup(false); setMarkupShapes([]); updateMarkupDraft(undefined)
+      drawingPointerRef.current = undefined
+      notifyMarkup(t('igvMarkupSaved'))
+    } catch { setCommitting(false); setCommitError(true) }
+  }
+  const copyMarked = async (): Promise<void> => {
+    if (committingRef.current || markupShapesRef.current.length === 0) return
+    try {
+      const ok = await copyImageBlob(await bakeMarked())
+      notifyMarkup(ok ? t('igvCopied') : t('igvCopyFailed'))
+    } catch { notifyMarkup(t('igvMarkupBakeFailed')) }
+  }
+  const downloadMarked = async (): Promise<void> => {
+    if (committingRef.current || !item || markupShapesRef.current.length === 0) return
+    try {
+      const url = URL.createObjectURL(await bakeMarked())
+      downloadBlobUrl(url, markedFileName(item.name))
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+      notifyMarkup(t('igvMarkupDownloaded'))
+    } catch { notifyMarkup(t('igvMarkupBakeFailed')) }
+  }
+
   if (!item) return null
   const showCounter = items.length > 1
   const hasPrev = props.hasPrev ?? index > 0
   const hasNext = props.hasNext ?? index < items.length - 1
   const meta = item.width && item.height ? `${item.width} × ${item.height}` : undefined
+  const naturalWidth = imageRef.current?.naturalWidth || item.width || geometry.width || 1
+  const naturalHeight = imageRef.current?.naturalHeight || item.height || geometry.height || 1
+  const markupEmpty = markupShapes.length === 0
 
   return (
     <div ref={rootRef} className="dsh-ig-lightbox-backdrop igv-root" role="dialog" aria-modal="true" aria-label={t('igvDialog')} tabIndex={-1}
-      onClick={event => { if (event.target === event.currentTarget && !annotating && transform.zoom === 1) void doClose() }}>
+      onClick={event => { if (event.target === event.currentTarget && !annotating && !markup && transform.zoom === 1) void doClose() }}>
       {committing || commitError ? (
         <div className="igv-draft-status" role="status">
           {t(committing ? 'igvAddingDraft' : 'igvDraftFailed')}
           {commitError ? <button className="igv-btn" type="button" onClick={() => { void doClose(true) }}>{t('igvCloseWithoutDraft')}</button> : null}
         </div>
+      ) : markupNotice !== undefined ? (
+        <div className="igv-draft-status igv-markup-notice" role="status">{markupNotice}</div>
       ) : null}
 
       <div className="dsh-ig-lightbox-topbar" onClick={e => e.stopPropagation()}>
@@ -239,7 +454,8 @@ export function ImageLightbox(props: ImageLightboxProps) {
       </div>
 
       <div className="igv-zoombar" onClick={e => e.stopPropagation()}>
-        <button type="button" className="igv-btn" data-active={annotating} aria-pressed={annotating} disabled={imageState !== 'ready'} title={annotating ? t('igvCancelAnnotate') : t('igvAnnotate')} onClick={() => { resetGesture(); setAnnotating(value => !value) }}><PenLine size={14} /><span className="igv-label">{annotating ? t('igvCancelAnnotate') : t('igvAnnotate')}</span></button>
+        <button type="button" className="igv-btn" data-active={annotating} aria-pressed={annotating} disabled={imageState !== 'ready' || committing} title={annotating ? t('igvCancelAnnotate') : t('igvAnnotate')} onClick={() => { resetGesture(); setMarkup(false); setMarkupShapes([]); updateMarkupDraft(undefined); drawingPointerRef.current = undefined; setAnnotating(value => !value) }}><PenLine size={14} /><span className="igv-label">{annotating ? t('igvCancelAnnotate') : t('igvAnnotate')}</span></button>
+        <button type="button" className="igv-btn" data-active={markup} aria-pressed={markup} disabled={imageState !== 'ready' || committing} title={markup ? t('igvCancelMarkup') : t('igvMarkup')} onClick={toggleMarkup}><PenTool size={14} /><span className="igv-label">{markup ? t('igvCancelMarkup') : t('igvMarkup')}</span></button>
         {annotations.length > 0 ? <button type="button" className="igv-btn" data-active={selected !== undefined} onClick={() => { const first = annotations[0]; if (!first) return; setSelected(current => current === undefined ? first.id : undefined); if (selected === undefined) setFocusNote(first.id) }}>{annotations.length} <span className="igv-label">{t('igvRegions')}</span></button> : null}
         <button type="button" className="igv-btn" title={t('igvFit')} onClick={fit}><Maximize size={14} /><span className="igv-label">{t('igvFit')}</span></button>
         <button type="button" className="igv-btn" disabled={imageState !== 'ready'} onClick={actual}>{t('igvActual')}</button>
@@ -250,6 +466,40 @@ export function ImageLightbox(props: ImageLightboxProps) {
         {(viewerActions ?? []).map(action => <GenericAction key={action.id} action={action} annotations={annotations} item={item} onDone={close => { if (close) void doClose() }} />)}
       </div>
 
+      {markup ? (
+        <div className="igv-markup-palette" role="toolbar" aria-label={t('igvMarkup')} onClick={e => e.stopPropagation()}>
+          <div className="igv-markup-group">
+            {MARKUP_TOOLS.map(({ tool, key, Icon }) => (
+              <button key={tool} type="button" className="igv-btn igv-markup-tool" data-active={markupTool === tool} aria-pressed={markupTool === tool} disabled={committing} title={t(key)} onClick={() => setMarkupTool(tool)}><Icon size={14} /></button>
+            ))}
+          </div>
+          <span className="igv-markup-sep" />
+          <div className="igv-markup-group" role="group" aria-label={t('igvMarkupColor')}>
+            {MARKUP_COLORS.map(swatch => (
+              <button key={swatch} type="button" className="igv-swatch" style={{ background: swatch }} data-active={markupColor === swatch} aria-pressed={markupColor === swatch} aria-label={swatch} title={swatch} disabled={committing} onClick={() => setMarkupColor(swatch)} />
+            ))}
+          </div>
+          <span className="igv-markup-sep" />
+          <div className="igv-markup-group" role="group" aria-label={t('igvMarkupStroke')}>
+            {MARKUP_STROKES.map(size => (
+              <button key={size} type="button" className="igv-btn igv-markup-tool" data-active={markupStroke === size} aria-pressed={markupStroke === size} disabled={committing} title={t(size === 'S' ? 'igvStrokeS' : size === 'M' ? 'igvStrokeM' : 'igvStrokeL')} onClick={() => setMarkupStroke(size)}><span className="igv-stroke-dot" data-size={size} /></button>
+            ))}
+          </div>
+          <span className="igv-markup-sep" />
+          <div className="igv-markup-group">
+            <button type="button" className="igv-btn igv-markup-tool" disabled={committing || markupEmpty} title={t('igvMarkupUndo')} onClick={() => setMarkupShapes(current => current.slice(0, -1))}><Undo2 size={14} /></button>
+            <button type="button" className="igv-btn igv-markup-tool" disabled={committing || markupEmpty} title={t('igvMarkupClear')} onClick={() => { setMarkupShapes([]); updateMarkupDraft(undefined) }}><Trash2 size={14} /></button>
+          </div>
+          <span className="igv-markup-sep" />
+          <div className="igv-markup-group">
+            <button type="button" className="igv-btn" disabled={committing || markupEmpty} title={t('igvMarkupCopy')} onClick={() => { void copyMarked() }}><Copy size={14} /><span className="igv-label">{t('igvMarkupCopy')}</span></button>
+            <button type="button" className="igv-btn" disabled={committing || markupEmpty} title={t('igvMarkupDownload')} onClick={() => { void downloadMarked() }}><Download size={14} /><span className="igv-label">{t('igvMarkupDownload')}</span></button>
+            <button type="button" className="igv-btn igv-markup-save" disabled={committing || markupEmpty} title={t('igvMarkupSaveHint')} onClick={() => { void saveMarkup() }}><Save size={14} /><span className="igv-label">{t('igvMarkupSave')}</span></button>
+            <button type="button" className="igv-btn" disabled={committing} title={t('igvCancelMarkup')} onClick={exitMarkup}><X size={14} /><span className="igv-label">{t('igvCancelMarkup')}</span></button>
+          </div>
+        </div>
+      ) : null}
+
       {showCounter ? (
         <>
           <button type="button" className="dsh-ig-lightbox-nav-btn dsh-ig-lightbox-nav-prev" title={t('igvPrevious')} disabled={!hasPrev} onClick={e => { e.stopPropagation(); goPrev() }}><ChevronLeft size={24} /></button>
@@ -257,20 +507,22 @@ export function ImageLightbox(props: ImageLightboxProps) {
         </>
       ) : null}
 
-      <div ref={stageRef} className="igv-stage" data-dragging={dragging} data-annotating={annotating}
-        onClick={event => { if (event.target === event.currentTarget && !annotating && transform.zoom === 1) void doClose() }}
-        {...(!annotating && imageState === 'ready' ? pointerHandlers : {})}
-        onDoubleClick={event => { if ((event.target as Element).closest('button,a,input,textarea') || imageState !== 'ready') return; if (transform.zoom === 1) actual(); else fit() }}>
+      <div ref={stageRef} className="igv-stage" data-dragging={dragging} data-annotating={annotating} data-markup={markup}
+        onClick={event => { if (event.target === event.currentTarget && !annotating && !markup && transform.zoom === 1) void doClose() }}
+        {...(!annotating && !markup && imageState === 'ready' ? pointerHandlers : {})}
+        onDoubleClick={event => { if (markup || (event.target as Element).closest('button,a,input,textarea') || imageState !== 'ready') return; if (transform.zoom === 1) actual(); else fit() }}>
         {imageState !== 'ready' ? (
           <div className="igv-load-status" role={imageState === 'error' ? 'alert' : 'status'}>
             {t(imageState === 'error' ? 'igvLoadFailed' : 'igvLoading')}
             {imageState === 'error' ? <button type="button" className="igv-btn" onClick={() => { setImageState('loading'); setAttempt(value => value + 1) }}>{t('igvRetry')}</button> : null}
           </div>
         ) : null}
-        <div ref={surfaceRef} className="igv-surface" onClick={addAnnotation} style={{ visibility: imageState === 'ready' ? 'visible' : 'hidden', transform: `translate3d(${transform.x}px,${transform.y}px,0) scale(${transform.zoom})` }}>
+        <div ref={surfaceRef} className="igv-surface" data-markup={markup} onClick={addAnnotation} style={{ visibility: imageState === 'ready' ? 'visible' : 'hidden', transform: `translate3d(${transform.x}px,${transform.y}px,0) scale(${transform.zoom})` }}
+          {...(markup && imageState === 'ready' ? { onPointerDown: onMarkupPointerDown, onPointerMove: onMarkupPointerMove, onPointerUp: onMarkupPointerUp, onPointerCancel: onMarkupPointerCancel, onLostPointerCapture: onMarkupPointerCancel } : {})}>
           <img key={`${identity}:${attempt}`} ref={imageRef} className="dsh-ig-lightbox-img igv-image" src={item.src} alt={item.name} draggable={false} decoding="async"
             onLoad={() => { setImageState('ready'); measure() }}
             onError={() => { if (!item.src) return; if (onImageError) onImageError(item, item.src); else setImageState('error') }} />
+          {markup && imageState === 'ready' ? <MarkupOverlay shapes={markupShapes} draft={markupDraft} width={naturalWidth} height={naturalHeight} /> : null}
         </div>
         {annotations.map((annotation, position) => (
           <div className="igv-annotation" data-x={annotation.x < 0.38 ? 'right' : annotation.x > 0.62 ? 'left' : 'center'} data-y={annotation.y < 0.28 ? 'down' : 'up'} style={annotationPosition(annotation)} key={annotation.id}>
@@ -292,7 +544,7 @@ export function ImageLightbox(props: ImageLightboxProps) {
             ) : null}
           </div>
         ))}
-        {annotating ? <span className="igv-hint">{t('igvRegionHint')}</span> : transform.zoom === 1 && !showCounter ? <span className="igv-hint">{t('igvZoomHint')}</span> : null}
+        {markup ? <span className="igv-hint">{t('igvMarkupHint')}</span> : annotating ? <span className="igv-hint">{t('igvRegionHint')}</span> : transform.zoom === 1 && !showCounter ? <span className="igv-hint">{t('igvZoomHint')}</span> : null}
       </div>
 
       {prompt !== undefined || actions ? (
@@ -306,7 +558,7 @@ export function ImageLightbox(props: ImageLightboxProps) {
 }
 
 /** Standalone overlay driven by the public service (shell.overlay seat). */
-export function ViewerOverlay({ service, t }: { service: ImageViewerService; t: ViewerT }) {
+export function ViewerOverlay({ service, t, commitMarkup }: { service: ImageViewerService; t: ViewerT; commitMarkup?: ((entries: MarkupCommitEntry[]) => Promise<void>) | undefined }) {
   const request = useSyncExternalStore(service.subscribe, service.getSnapshot)
   const [cursor, setCursor] = useState({ revision: 0, index: 0 })
   if (!request) return null
@@ -323,6 +575,7 @@ export function ViewerOverlay({ service, t }: { service: ImageViewerService; t: 
       prompt={request.items[index]?.prompt}
       viewerActions={request.items[index]?.actions}
       commitAnnotations={request.commitAnnotations}
+      commitMarkup={commitMarkup}
     />
   )
 }

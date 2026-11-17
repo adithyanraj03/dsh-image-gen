@@ -1754,6 +1754,7 @@ export const GalleryViewTab: FC<GalleryViewTabProps> = (props) => {
           t={t}
           service={getSharedViewer()?.service}
           commitAnnotations={getSharedViewer()?.commit}
+          commitMarkup={getSharedViewer()?.commitMarkup}
           topMeta={<>
             <span className="dsh-ig-tag">{previewItem.provider === 'import' ? t('filterImport') : previewItem.provider}</span>
             {previewItem.model ? <span className="dsh-ig-tag dsh-ig-tag-model">{previewItem.model}</span> : null}

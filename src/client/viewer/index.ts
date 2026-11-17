@@ -7,18 +7,25 @@
  * injection. Surfaces read the shared service/commit via `getSharedViewer()`.
  */
 import { ImageViewerService } from './viewer-service.js'
-import { createDraftCommit, type Annotation, type CommitEntry, type ConversationLike, type SessionsLike } from './annotations.js'
+import { captureDraftHost, commitDraftFiles, createDraftCommit, type Annotation, type CommitEntry, type ConversationLike, type SessionsLike } from './annotations.js'
+import { markedFileName, type MarkupCommitEntry } from './markup.js'
 import { noteText, ViewerOverlay, type ViewerT } from './image-lightbox.js'
 import { VIEWER_CSS } from './styles.js'
 
 export { ImageViewerService, normalizeViewerRequest } from './viewer-service.js'
 export type { ViewerItem, ViewerAction, ViewerDownload, ViewerRequest } from './viewer-service.js'
-export { renderAnnotationImage, createDraftCommit, currentSessionId } from './annotations.js'
-export type { Annotation, CommitEntry, CommitItem } from './annotations.js'
+export { renderAnnotationImage, createDraftCommit, currentSessionId, captureDraftHost, commitDraftFiles, draftHostReady } from './annotations.js'
+export type { Annotation, CommitEntry, CommitItem, DraftFile, DraftCommitHost } from './annotations.js'
 export { ImageLightbox, ViewerOverlay, noteText, VIEWER_KEYS } from './image-lightbox.js'
 export type { ViewerKey, ViewerT, ImageLightboxProps } from './image-lightbox.js'
 export { useImageTransform } from './use-image-transform.js'
 export { VIEWER_CSS } from './styles.js'
+export {
+  MARKUP_COLORS, MARKUP_STROKES, REDACT_OPACITY, arrowHeadPoints, buildMarkupOps, drawMarkupOps,
+  imageScreenRect, markedFileName, nextStepNumber, normalizedToScreen, renderMarkupImage,
+  screenToNormalized, stepContrast, stepRadius, strokePixels, textFontSize,
+} from './markup.js'
+export type { MarkupCommitEntry, MarkupDrawOp, MarkupGeometry, MarkupPoint, MarkupShape, MarkupStroke, MarkupTool, MarkupTransform, ScreenRect } from './markup.js'
 
 /** Structural view of the cordis Context pieces registration touches. */
 interface ViewerCtx {
@@ -35,6 +42,8 @@ interface ViewerCtx {
 export interface SharedViewer {
   service: ImageViewerService
   commit(entries: CommitEntry[]): Promise<void>
+  /** Attach baked marked PNGs to the pinned session's composer draft (no send). */
+  commitMarkup(entries: MarkupCommitEntry[]): Promise<void>
 }
 
 let shared: SharedViewer | undefined
@@ -60,12 +69,21 @@ export function registerViewer(ctx: ViewerCtx, t: ViewerT, readBlob: (src: strin
     conversation = owner.get('conversation') as ConversationLike | undefined
   })
 
+  const hostDeps = { getSessions: () => sessions, getConversation: () => conversation }
   const commit = createDraftCommit({
-    getSessions: () => sessions,
-    getConversation: () => conversation,
+    ...hostDeps,
     readBlob,
     formatNotes: (annotations: Annotation[]) => noteText(annotations, t),
   })
+  // Markup save reuses the same session-pinned draft machinery: the lightbox
+  // bakes the PNG, this attaches it as `<base>-marked.png` without sending.
+  const markupHost = captureDraftHost(hostDeps)
+  const commitMarkup = async (entries: MarkupCommitEntry[]): Promise<void> => {
+    await commitDraftFiles(markupHost, entries.map(({ item, blob }) => {
+      const name = markedFileName(item.name)
+      return { file: new File([blob], name, { type: 'image/png' }), text: name }
+    }))
+  }
 
   ctx.effect(() => {
     const style = document.createElement('style')
@@ -75,7 +93,7 @@ export function registerViewer(ctx: ViewerCtx, t: ViewerT, readBlob: (src: strin
     const disposeService = ctx.reflect.provide('imageGenViewer', service)
     const register = ctx.slots.register.bind(ctx.slots)
     const disposeSlot = ctx.slots.inject('shell.overlay', () => register({
-      name: 'shell.overlay', id: 'dsh-image-gen-viewer', order: 21, inject: () => ({ service, t }),
+      name: 'shell.overlay', id: 'dsh-image-gen-viewer', order: 21, inject: () => ({ service, t, commitMarkup }),
     }, ViewerOverlay)) as (() => void) | undefined
     return () => {
       style.remove()
@@ -84,6 +102,6 @@ export function registerViewer(ctx: ViewerCtx, t: ViewerT, readBlob: (src: strin
     }
   }, 'dsh-image-gen: viewer service, overlay and styles')
 
-  shared = { service, commit }
+  shared = { service, commit, commitMarkup }
   return shared
 }

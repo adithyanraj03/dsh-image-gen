@@ -42,7 +42,7 @@ import { clearStudioCanvases, StudioCanvas } from './canvas/studio-canvas.js'
 import type { CanvasLandingItem } from './canvas/canvas-bridge.js'
 import { pushCanvasLandings } from './canvas/canvas-bridge.js'
 import { GalleryCanvasButton } from './canvas/gallery-canvas-button.js'
-import { startGalleryImageDrag } from './canvas/gallery-image-transfer.js'
+import { galleryLanding, startGalleryImageDrag } from './canvas/gallery-image-transfer.js'
 import type { LocaleService } from './gallery-view.js'
 import {
   BatchCanvasItem,
@@ -122,6 +122,12 @@ const COPY = {
     igvCopyNotes: '复制备注', igvCopied: '已复制', igvCopyFailed: '复制失败，请重试', igvPrevious: '上一张图片', igvNext: '下一张图片',
     igvZoomHint: '滚轮缩放 · 拖动查看 · 双击切换原始大小', igvLoading: '正在加载图片…', igvLoadFailed: '图片加载失败。', igvRetry: '重试',
     igvAddingDraft: '正在把图片和备注加入草稿…', igvDraftFailed: '未能加入草稿。请回到原会话并确保输入框可编辑，再关闭以重试。', igvCloseWithoutDraft: '仅关闭，不加入草稿',
+    igvMarkup: '涂鸦标注', igvCancelMarkup: '退出涂鸦', igvMarkupHint: '在图片上绘制标记；保存会把标记写入图片并加入当前会话草稿（不发送）。',
+    igvToolPen: '画笔', igvToolLine: '直线', igvToolArrow: '箭头', igvToolRect: '矩形', igvToolEllipse: '椭圆', igvToolStep: '序号', igvToolRedact: '遮挡', igvToolText: '文字',
+    igvMarkupColor: '颜色', igvMarkupStroke: '线条粗细', igvStrokeS: '细', igvStrokeM: '中', igvStrokeL: '粗',
+    igvMarkupUndo: '撤销', igvMarkupClear: '清空', igvMarkupSave: '保存', igvMarkupSaveHint: '把标记烘焙进 PNG 并加入当前会话草稿（不发送）',
+    igvMarkupCopy: '复制标记图', igvMarkupDownload: '下载标记图', igvMarkupDownloaded: '已开始下载标记图',
+    igvMarkupSaved: '标记图已加入草稿', igvMarkupNoHost: '当前没有可用的会话输入框，请改用复制或下载。', igvMarkupBakeFailed: '标记图生成失败，请重试', igvMarkupTextPrompt: '输入要标注的文字',
   },
   en: {
     title: 'Cloud Image Studio', configured: 'API configured', unconfigured: 'Not configured', recent: 'Recent generations', empty: 'No generated images yet',
@@ -166,6 +172,12 @@ const COPY = {
     igvCopyNotes: 'Copy notes', igvCopied: 'Copied', igvCopyFailed: 'Copy failed. Try again.', igvPrevious: 'Previous image', igvNext: 'Next image',
     igvZoomHint: 'Wheel to zoom · drag to pan · double-click for 100%', igvLoading: 'Loading image…', igvLoadFailed: 'Image could not be loaded.', igvRetry: 'Retry',
     igvAddingDraft: 'Adding image and notes to draft…', igvDraftFailed: 'Could not add to draft. Return to the original session and keep the composer editable, then close to retry.', igvCloseWithoutDraft: 'Close without adding',
+    igvMarkup: 'Markup', igvCancelMarkup: 'Exit markup', igvMarkupHint: 'Draw on the image. Save bakes the marks into a PNG and adds it to the current session draft (without sending).',
+    igvToolPen: 'Pen', igvToolLine: 'Line', igvToolArrow: 'Arrow', igvToolRect: 'Rectangle', igvToolEllipse: 'Ellipse', igvToolStep: 'Step', igvToolRedact: 'Redact', igvToolText: 'Text',
+    igvMarkupColor: 'Color', igvMarkupStroke: 'Stroke width', igvStrokeS: 'Thin', igvStrokeM: 'Medium', igvStrokeL: 'Thick',
+    igvMarkupUndo: 'Undo', igvMarkupClear: 'Clear', igvMarkupSave: 'Save', igvMarkupSaveHint: 'Bake marks into a PNG and add it to the current session draft (without sending)',
+    igvMarkupCopy: 'Copy marked image', igvMarkupDownload: 'Download marked image', igvMarkupDownloaded: 'Marked image download started',
+    igvMarkupSaved: 'Marked image added to draft', igvMarkupNoHost: 'No conversation composer is available. Use Copy or Download instead.', igvMarkupBakeFailed: 'Could not render the marked image. Try again.', igvMarkupTextPrompt: 'Enter the text to place',
   },
 } as const
 
@@ -242,6 +254,7 @@ export const StudioView: FC<{
     select: item => railActionsRef.current?.select(item),
     favorite: item => railActionsRef.current?.favorite(item),
     toast: message => railActionsRef.current?.toast(message),
+    place: item => railActionsRef.current?.place?.(item),
   }), [])
   const [selected, setSelected] = useState<GalleryItem | null>(null)
   /** Image armed for click-to-place on the infinite canvas (null = unarmed). */
@@ -280,6 +293,8 @@ export const StudioView: FC<{
   // behaviour is untouched until the toggle is clicked; a caller may open the
   // infinite canvas directly (the right-sidebar studio variant does).
   const [canvasSurface, setCanvasSurface] = useState<'preview' | 'infinite'>(initialCanvasSurface ?? 'preview')
+  /** Stable disarm callback so memoized StudioCanvas ignores unrelated re-renders. */
+  const disarmPlacement = useCallback(() => setPlaceItem(null), [])
   const [showClearCanvasModal, setShowClearCanvasModal] = useState(false)
   useEffect(() => {
     if (!showClearCanvasModal) return
@@ -539,6 +554,13 @@ export const StudioView: FC<{
   // visible so a number is never a mixed bag of semantics.
   const apiConfiguredCount = config?.providers.filter(item => item.configured && !isSubscriptionProvider(item.provider)).length ?? 0
   const subscriptionSignedInCount = config?.providers.filter(item => item.configured && isSubscriptionProvider(item.provider)).length ?? 0
+  // One label for the provider pill and its tooltip: when the toolbar
+  // collapses to icons the title keeps the status discoverable.
+  const providerStatusText = configuredCount > 0
+    ? (subscriptionSignedInCount > 0
+        ? t('configuredSplit', { api: String(apiConfiguredCount), sub: String(subscriptionSignedInCount) })
+        : t('configuredCount', { count: String(apiConfiguredCount) }))
+    : t('unconfiguredStatus')
   const displayItems = useMemo(() => items.slice(0, visibleLimit), [items, visibleLimit])
   const comparisonProfiles = useMemo(
     () => (config?.providers ?? []).filter(item => item.configured && (mode === 'generate' || item.supportsEditing)),
@@ -616,9 +638,9 @@ export const StudioView: FC<{
     setSelected(item)
     // On the infinite canvas a rail click arms click-to-place: the next canvas
     // click drops the image at that point. The preview surface keeps plain select.
-    setPlaceItem(canvasSurface === 'infinite'
-      ? { galleryId: item.id, attachment: item.attachment, prompt: item.prompt, provider: item.provider, model: item.model }
-      : null)
+    // galleryLanding is the same mapper drag-and-drop uses, so provenance and
+    // prompt truncation stay identical across every entry point.
+    setPlaceItem(canvasSurface === 'infinite' ? galleryLanding(item) : null)
     // No tab switch: the middle canvas shows the selection; the right panel
     // stays on whatever the user is working in (form or chat).
     resetFit()
@@ -1318,6 +1340,7 @@ export const StudioView: FC<{
       select: selectItem,
       favorite: item => { void applyFavoriteImage(item) },
       toast: flash,
+      place: item => setPlaceItem(galleryLanding(item)),
     }
   })
 
@@ -1358,7 +1381,7 @@ export const StudioView: FC<{
             </div>
             {railTab === 'recent' ? (
               <div className="dsh-ig-recent-scroll">
-                {items.length === 0 ? <div className="dsh-ig-recent-empty"><ImagePlus size={22} /><span>{t('empty')}</span></div> : displayItems.map(item => <RecentItem key={item.id} item={item} active={selected?.id === item.id} mode="select" lang={lang} actions={railActions} />)}
+                {items.length === 0 ? <div className="dsh-ig-recent-empty"><ImagePlus size={22} /><span>{t('empty')}</span></div> : displayItems.map(item => <RecentItem key={item.id} item={item} active={selected?.id === item.id} mode="select" lang={lang} actions={railActions} placeMode={canvasSurface === 'infinite'} />)}
                 {items.length > visibleLimit && (
                   <button type="button" className="dsh-ig-load-more" onClick={() => setVisibleLimit(l => l + 30)}>
                     {t('loadMore', { n: String(items.length - visibleLimit) })}
@@ -1377,7 +1400,7 @@ export const StudioView: FC<{
                     <>
                       <div className="dsh-ig-fav-grid">
                         {list.slice(0, favoriteLimit).map(item => (
-                          <RecentItem key={item.id} item={item} active={false} mode="favorite" lang={lang} actions={railActions} />
+                          <RecentItem key={item.id} item={item} active={false} mode="favorite" lang={lang} actions={railActions} placeMode={canvasSurface === 'infinite'} />
                         ))}
                       </div>
                       {list.length > favoriteLimit && (
@@ -1476,15 +1499,9 @@ export const StudioView: FC<{
                 </button>
               )}
               <div className="dsh-ig-status-badge-wrap">
-                <div className="dsh-ig-status-badge">
+                <div className="dsh-ig-status-badge" title={providerStatusText}>
                   <span className={`dsh-ig-status-dot ${configuredCount > 0 ? 'is-ready' : 'is-muted'}`} />
-                  <span className="dsh-ig-status-text">
-                    {configuredCount > 0
-                      ? (subscriptionSignedInCount > 0
-                          ? t('configuredSplit', { api: String(apiConfiguredCount), sub: String(subscriptionSignedInCount) })
-                          : t('configuredCount', { count: String(apiConfiguredCount) }))
-                      : t('unconfiguredStatus')}
-                  </span>
+                  <span className="dsh-ig-status-text">{providerStatusText}</span>
                   <ChevronDown size={11} className="dsh-ig-status-arrow" />
                 </div>
                 {config !== null && (
@@ -1539,7 +1556,7 @@ export const StudioView: FC<{
                * buried among the right-side actions. */}
               {canvasSurface === 'preview' && (<>
                 <span className="dsh-ig-toolbar-divider" />
-                <button type="button" className={fit ? 'is-active' : ''} onClick={resetFit}>{t('fit')} <ChevronDown size={13} /></button>
+                <button type="button" className={fit ? 'is-active' : ''} onClick={resetFit} title={t('fit')}><span>{t('fit')}</span><ChevronDown size={13} /></button>
                 <button type="button" onClick={() => { setFit(false); setZoom(value => Math.max(25, value - 25)) }} title="Zoom out"><ZoomOut size={16} /></button>
                 <span className="dsh-ig-zoom-display">{fit ? 'AUTO' : `${Math.round(zoom)}%`}</span>
                 <button type="button" onClick={() => { setFit(false); setZoom(value => Math.min(500, value + 25)) }} title="Zoom in"><ZoomIn size={16} /></button>
@@ -1582,7 +1599,7 @@ export const StudioView: FC<{
             </div>
           )}
           {canvasSurface === 'infinite' ? (
-            <StudioCanvas lang={lang} placeItem={placeItem} onPlaced={() => setPlaceItem(null)} />
+            <StudioCanvas lang={lang} placeItem={placeItem} onPlaced={disarmPlacement} />
           ) : (
           <div
             className={`dsh-ig-canvas ${isDragging ? 'is-dragging' : ''}`}
@@ -1712,7 +1729,7 @@ export const StudioView: FC<{
             </button>
           </div>
           <div className="dsh-ig-generator-form">
-            <div className="dsh-ig-mode-switch"><button type="button" className={mode === 'generate' ? 'is-active' : ''} onClick={() => setMode('generate')}><Sparkles size={15} />{t('generate')}</button><button type="button" className={mode === 'edit' ? 'is-active' : ''} onClick={() => setMode('edit')}><ImagePlus size={15} />{t('edit')}</button></div>
+            <div className="dsh-ig-mode-switch"><button type="button" className={mode === 'generate' ? 'is-active' : ''} onClick={() => setMode('generate')} title={t('generate')}><Sparkles size={15} /><span>{t('generate')}</span></button><button type="button" className={mode === 'edit' ? 'is-active' : ''} onClick={() => setMode('edit')} title={t('edit')}><ImagePlus size={15} /><span>{t('edit')}</span></button></div>
             {mode === 'edit' && (
               <div className="dsh-ig-field">
                 <div className="dsh-ig-field-label">
@@ -1812,8 +1829,8 @@ export const StudioView: FC<{
             ) : <>
               {comparisonProfiles.length >= 2 && (
                 <div className="dsh-ig-generation-kind" role="group" aria-label={t('compareModels')}>
-                  <button type="button" className={!comparisonEnabled ? 'is-active' : ''} onClick={() => toggleComparison(false)}>{t('singleModel')}</button>
-                  <button type="button" className={comparisonEnabled ? 'is-active' : ''} onClick={() => toggleComparison(true)}><Copy size={13} />{t('compareModels')}</button>
+                  <button type="button" className={!comparisonEnabled ? 'is-active' : ''} onClick={() => toggleComparison(false)} title={t('singleModel')}><span>{t('singleModel')}</span></button>
+                  <button type="button" className={comparisonEnabled ? 'is-active' : ''} onClick={() => toggleComparison(true)} title={t('compareModels')}><Copy size={13} /><span>{t('compareModels')}</span></button>
                 </div>
               )}
               {comparisonEnabled ? <>
@@ -1898,6 +1915,7 @@ export const StudioView: FC<{
           t={t}
           service={getSharedViewer()?.service}
           commitAnnotations={getSharedViewer()?.commit}
+          commitMarkup={getSharedViewer()?.commitMarkup}
           topMeta={<>
             <span className="dsh-ig-tag">{selected.provider}</span>
             <span className="dsh-ig-tag dsh-ig-tag-model">{selected.model}</span>

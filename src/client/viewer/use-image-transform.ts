@@ -37,7 +37,7 @@ export interface ImageTransformApi {
   }
 }
 
-export function useImageTransform(identity: string): ImageTransformApi {
+export function useImageTransform(identity: string, gesturesEnabled = true): ImageTransformApi {
   const [transform, setTransform] = useState<Transform>(fitted)
   const [dragging, setDragging] = useState(false)
   const [pixelScale, setPixelScale] = useState(1)
@@ -49,6 +49,10 @@ export function useImageTransform(identity: string): ImageTransformApi {
   const pointers = useRef(new Map<number, { x: number; y: number }>())
   const gesture = useRef<{ kind: 'pan'; x: number; y: number; transform: Transform } | { kind: 'pinch'; distance: number; transform: Transform } | undefined>(undefined)
   transformRef.current = transform
+  // Markup mode locks zoom/pan gestures (wheel, drag, pinch) while drawing;
+  // programmatic fit/actual/setZoomAt stay available and the overlay follows.
+  const gesturesEnabledRef = useRef(gesturesEnabled)
+  gesturesEnabledRef.current = gesturesEnabled
 
   const resetGesture = useCallback(() => {
     pointers.current.clear()
@@ -101,7 +105,7 @@ export function useImageTransform(identity: string): ImageTransformApi {
   }, [identity, measure])
   useEffect(() => {
     const stage = stageRef.current
-    if (!stage) return
+    if (!stage || !gesturesEnabled) return
     const wheel = (event: WheelEvent): void => {
       event.preventDefault()
       const delta = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? stage.clientHeight : 1)
@@ -109,9 +113,10 @@ export function useImageTransform(identity: string): ImageTransformApi {
     }
     stage.addEventListener('wheel', wheel, { passive: false })
     return () => stage.removeEventListener('wheel', wheel)
-  }, [identity, setZoomAt])
+  }, [identity, setZoomAt, gesturesEnabled])
 
   const onPointerDown = (event: React.PointerEvent): void => {
+    if (!gesturesEnabledRef.current) return
     if (event.button !== 0 || (event.target as Element).closest('button,a,input,textarea,select')) return
     const current = transformRef.current
     if (event.pointerType === 'mouse' && current.zoom <= 1) return

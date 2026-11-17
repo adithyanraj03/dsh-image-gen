@@ -130,6 +130,12 @@ export const DICT = {
     igvCopyNotes: '复制备注', igvCopied: '已复制', igvCopyFailed: '复制失败，请重试', igvPrevious: '上一张图片', igvNext: '下一张图片',
     igvZoomHint: '滚轮缩放 · 拖动查看 · 双击切换原始大小', igvLoading: '正在加载图片…', igvLoadFailed: '图片加载失败。', igvRetry: '重试',
     igvAddingDraft: '正在把图片和备注加入草稿…', igvDraftFailed: '未能加入草稿。请回到原会话并确保输入框可编辑，再关闭以重试。', igvCloseWithoutDraft: '仅关闭，不加入草稿',
+    igvMarkup: '涂鸦标注', igvCancelMarkup: '退出涂鸦', igvMarkupHint: '在图片上绘制标记；保存会把标记写入图片并加入当前会话草稿（不发送）。',
+    igvToolPen: '画笔', igvToolLine: '直线', igvToolArrow: '箭头', igvToolRect: '矩形', igvToolEllipse: '椭圆', igvToolStep: '序号', igvToolRedact: '遮挡', igvToolText: '文字',
+    igvMarkupColor: '颜色', igvMarkupStroke: '线条粗细', igvStrokeS: '细', igvStrokeM: '中', igvStrokeL: '粗',
+    igvMarkupUndo: '撤销', igvMarkupClear: '清空', igvMarkupSave: '保存', igvMarkupSaveHint: '把标记烘焙进 PNG 并加入当前会话草稿（不发送）',
+    igvMarkupCopy: '复制标记图', igvMarkupDownload: '下载标记图', igvMarkupDownloaded: '已开始下载标记图',
+    igvMarkupSaved: '标记图已加入草稿', igvMarkupNoHost: '当前没有可用的会话输入框，请改用复制或下载。', igvMarkupBakeFailed: '标记图生成失败，请重试', igvMarkupTextPrompt: '输入要标注的文字',
   },
   en: {
     // Top Tabs
@@ -261,6 +267,12 @@ export const DICT = {
     igvCopyNotes: 'Copy notes', igvCopied: 'Copied', igvCopyFailed: 'Copy failed. Try again.', igvPrevious: 'Previous image', igvNext: 'Next image',
     igvZoomHint: 'Wheel to zoom · drag to pan · double-click for 100%', igvLoading: 'Loading image…', igvLoadFailed: 'Image could not be loaded.', igvRetry: 'Retry',
     igvAddingDraft: 'Adding image and notes to draft…', igvDraftFailed: 'Could not add to draft. Return to the original session and keep the composer editable, then close to retry.', igvCloseWithoutDraft: 'Close without adding',
+    igvMarkup: 'Markup', igvCancelMarkup: 'Exit markup', igvMarkupHint: 'Draw on the image. Save bakes the marks into a PNG and adds it to the current session draft (without sending).',
+    igvToolPen: 'Pen', igvToolLine: 'Line', igvToolArrow: 'Arrow', igvToolRect: 'Rectangle', igvToolEllipse: 'Ellipse', igvToolStep: 'Step', igvToolRedact: 'Redact', igvToolText: 'Text',
+    igvMarkupColor: 'Color', igvMarkupStroke: 'Stroke width', igvStrokeS: 'Thin', igvStrokeM: 'Medium', igvStrokeL: 'Thick',
+    igvMarkupUndo: 'Undo', igvMarkupClear: 'Clear', igvMarkupSave: 'Save', igvMarkupSaveHint: 'Bake marks into a PNG and add it to the current session draft (without sending)',
+    igvMarkupCopy: 'Copy marked image', igvMarkupDownload: 'Download marked image', igvMarkupDownloaded: 'Marked image download started',
+    igvMarkupSaved: 'Marked image added to draft', igvMarkupNoHost: 'No conversation composer is available. Use Copy or Download instead.', igvMarkupBakeFailed: 'Could not render the marked image. Try again.', igvMarkupTextPrompt: 'Enter the text to place',
   },
 } as const
 

@@ -80,12 +80,20 @@ export interface DraftCommitDeps {
   render?(blob: Blob, annotations: Annotation[]): Promise<Blob>
 }
 
-/**
- * Capture the destination when the viewer opens, validate again after async
- * image preparation. Never send or redirect another session.
- */
-export function createDraftCommit(deps: DraftCommitDeps): (entries: CommitEntry[]) => Promise<void> {
-  const render = deps.render ?? renderAnnotationImage
+/** A prepared file + the draft text line that accompanies it. */
+export interface DraftFile { file: File; text: string }
+export interface DraftHostDeps {
+  getSessions(): SessionsLike | undefined
+  getConversation(): ConversationLike | undefined
+}
+/** Session destination captured once (when the viewer registers), never re-pinned. */
+export interface DraftCommitHost {
+  sessions: SessionsLike | undefined
+  conversation: ConversationLike | undefined
+  sessionId: string | undefined
+}
+
+export function captureDraftHost(deps: DraftHostDeps): DraftCommitHost {
   let sessions: SessionsLike | undefined
   let conversation: ConversationLike | undefined
   let sessionId: string | undefined
@@ -94,27 +102,55 @@ export function createDraftCommit(deps: DraftCommitDeps): (entries: CommitEntry[
     conversation = deps.getConversation()
     sessionId = sessions ? currentSessionId(sessions.list.getSnapshot()) : undefined
   } catch { /* The viewer also works without a conversation host. */ }
+  return { sessions, conversation, sessionId }
+}
+
+export function draftHostReady(host: DraftCommitHost): boolean {
+  return host.sessionId !== undefined && host.conversation?.input?.for !== undefined && host.sessions !== undefined
+    && currentSessionId(host.sessions.list.getSnapshot()) === host.sessionId
+}
+
+/**
+ * Attach prepared files to the pinned session's composer draft WITHOUT sending.
+ * Shared by the region-note commit and the markup (baked-PNG) commit: session
+ * re-validation, composer-busy guard, legacy/modern draft API fallback, and
+ * release-on-failure so a refused add never leaks draft attachments.
+ */
+export async function commitDraftFiles(host: DraftCommitHost, files: DraftFile[]): Promise<void> {
+  const { sessions, conversation, sessionId } = host
+  if (!sessionId || !conversation?.input?.for || !sessions || currentSessionId(sessions.list.getSnapshot()) !== sessionId) {
+    throw new Error('Composer unavailable or session changed')
+  }
+  if (files.length === 0) return
+  if (currentSessionId(sessions.list.getSnapshot()) !== sessionId) throw new Error('Session changed')
+  const input = conversation.input.for(sessions.scope(sessionId))
+  const state = input.state.getSnapshot()
+  if (state.phase !== 'plain' || state.occurrences?.length) throw new Error('Composer busy or contains references')
+  const modern = typeof conversation.createDrafts === 'function'
+  const add = modern ? input.addAttachments : input.addImages
+  const release = modern ? conversation.releaseDraftAttachments : conversation.releaseDraftImages
+  if (typeof add !== 'function' || typeof release !== 'function') throw new Error('Composer unavailable')
+  const created = modern ? conversation.createDrafts!(sessionId, files.map(item => item.file)) : conversation.createDraftImages!(files.map(item => item.file))
+  try {
+    if (!add.call(input, created.map(item => item.id))) throw new Error('Composer busy')
+  } catch (error) { release.call(conversation, created); throw error }
+  input.setDraft([state.draft, ...files.map(item => item.text)].filter(Boolean).join('\n\n'))
+}
+
+/**
+ * Capture the destination when the viewer opens, validate again after async
+ * image preparation. Never send or redirect another session.
+ */
+export function createDraftCommit(deps: DraftCommitDeps): (entries: CommitEntry[]) => Promise<void> {
+  const render = deps.render ?? renderAnnotationImage
+  const host = captureDraftHost(deps)
   return async entries => {
-    if (!sessionId || !conversation?.input?.for || !sessions || currentSessionId(sessions.list.getSnapshot()) !== sessionId) {
-      throw new Error('Composer unavailable or session changed')
-    }
+    if (!draftHostReady(host)) throw new Error('Composer unavailable or session changed')
     const prepared = await Promise.all(entries.map(async ({ item, annotations }) => {
       const image = await render(await deps.readBlob(item.src), annotations)
       const name = `${String(item.name || 'image').replace(/\.[^.]+$/, '')}-annotated.png`
       return { file: new File([image], name, { type: 'image/png' }), text: `${name}\n${deps.formatNotes(annotations)}` }
     }))
-    if (currentSessionId(sessions.list.getSnapshot()) !== sessionId) throw new Error('Session changed')
-    const input = conversation.input.for(sessions.scope(sessionId))
-    const state = input.state.getSnapshot()
-    if (state.phase !== 'plain' || state.occurrences?.length) throw new Error('Composer busy or contains references')
-    const modern = typeof conversation.createDrafts === 'function'
-    const add = modern ? input.addAttachments : input.addImages
-    const release = modern ? conversation.releaseDraftAttachments : conversation.releaseDraftImages
-    if (typeof add !== 'function' || typeof release !== 'function') throw new Error('Composer unavailable')
-    const created = modern ? conversation.createDrafts!(sessionId, prepared.map(item => item.file)) : conversation.createDraftImages!(prepared.map(item => item.file))
-    try {
-      if (!add.call(input, created.map(item => item.id))) throw new Error('Composer busy')
-    } catch (error) { release.call(conversation, created); throw error }
-    input.setDraft([state.draft, ...prepared.map(item => item.text)].filter(Boolean).join('\n\n'))
+    await commitDraftFiles(host, prepared)
   }
 }
