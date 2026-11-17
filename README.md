@@ -53,6 +53,10 @@ Custom multi-provider image generation, editing, and interactive canvas studio p
 
 ![Generate panel](docs/assets/studio-generate-panel.png)
 
+**Loading animation** — the amber "picture being made" water sheet with stage, elapsed time and a progress bar, then a radial ripple-reveal into the finished image.
+
+![Loading animation](docs/assets/generating-animation.gif)
+
 ---
 
 ## Custom `/v1/images/generations` Configuration

@@ -53,6 +53,10 @@
 
 ![生成面板](docs/assets/studio-generate-panel.png)
 
+**加载动画** —— 琥珀色“正在绘制”水幕，带阶段、已用时间与进度条，随后以径向涟漪揭示成品图。
+
+![加载动画](docs/assets/generating-animation.gif)
+
 ---
 
 ## 自定义 `/v1/images/generations` 配置
