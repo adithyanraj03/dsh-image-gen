@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { GALLERY_IMAGE_MIME, startGalleryImageDrag, readGalleryImageDrop } from '../src/client/tl/gallery-image-transfer.js'
+import { GALLERY_IMAGE_MIME, startGalleryImageDrag, readGalleryImageDrop } from '../src/client/canvas/gallery-image-transfer.js'
 import type { GalleryItem } from '../src/client/gallery-store.js'
 import { CANVAS_MAX_PROMPT_CHARS } from '../src/shared.js'
-import { clearTlLandings, hasTlLandingConsumer, registerTlLandingConsumer, sendTlLandingToOpenCanvas, subscribeTlLandingAvailability } from '../src/client/tl/tl-canvas-bridge.js'
+import { clearCanvasLandings, hasCanvasLandingConsumer, registerCanvasLandingConsumer, sendCanvasLandingToOpenCanvas, subscribeCanvasLandingAvailability } from '../src/client/canvas/canvas-bridge.js'
 
 const item: GalleryItem = {
   id: 'g-123', prompt: 'a cat', provider: 'google', model: 'gemini-image', createdAt: 1,
@@ -142,29 +142,29 @@ describe('gallery image transfer into the canvas', () => {
 
 describe('explicit send to canvas availability', () => {
   const stops: Array<() => void> = []
-  afterEach(() => { for (const stop of stops.splice(0).reverse()) stop(); clearTlLandings() })
+  afterEach(() => { for (const stop of stops.splice(0).reverse()) stop(); clearCanvasLandings() })
   const landing = { galleryId: item.id, attachment: item.attachment, prompt: item.prompt, provider: item.provider, model: item.model }
 
   it('refuses closed canvases and never replays that click after a canvas opens', async () => {
-    expect(hasTlLandingConsumer()).toBe(false)
-    expect(sendTlLandingToOpenCanvas(landing)).toBe(false)
+    expect(hasCanvasLandingConsumer()).toBe(false)
+    expect(sendCanvasLandingToOpenCanvas(landing)).toBe(false)
     const receive = vi.fn(async () => true)
-    stops.push(registerTlLandingConsumer(receive))
+    stops.push(registerCanvasLandingConsumer(receive))
     await Promise.resolve()
     expect(receive).not.toHaveBeenCalled()
   })
 
   it('notifies availability only when the first canvas opens or the last closes', () => {
     const notify = vi.fn()
-    stops.push(subscribeTlLandingAvailability(notify))
-    const first = registerTlLandingConsumer(async () => true), second = registerTlLandingConsumer(async () => true)
+    stops.push(subscribeCanvasLandingAvailability(notify))
+    const first = registerCanvasLandingConsumer(async () => true), second = registerCanvasLandingConsumer(async () => true)
     stops.push(first, second)
     expect(notify).toHaveBeenCalledTimes(1)
     first()
-    expect(hasTlLandingConsumer()).toBe(true)
+    expect(hasCanvasLandingConsumer()).toBe(true)
     expect(notify).toHaveBeenCalledTimes(1)
     second()
-    expect(hasTlLandingConsumer()).toBe(false)
+    expect(hasCanvasLandingConsumer()).toBe(false)
     expect(notify).toHaveBeenCalledTimes(2)
     second()
     expect(notify).toHaveBeenCalledTimes(2)
@@ -172,20 +172,20 @@ describe('explicit send to canvas availability', () => {
 
   it('preserves provenance on the explicit button route', async () => {
     const receive = vi.fn(async () => true)
-    stops.push(registerTlLandingConsumer(receive))
-    expect(sendTlLandingToOpenCanvas(landing)).toBe(true)
+    stops.push(registerCanvasLandingConsumer(receive))
+    expect(sendCanvasLandingToOpenCanvas(landing)).toBe(true)
     await vi.waitFor(() => expect(receive).toHaveBeenCalledWith([{ ...landing, onlyWhileCanvasOpen: true }]))
   })
 
   it('does not replay an interrupted history send after the last canvas closes', async () => {
     let finish!: (value: boolean) => void
-    const stop = registerTlLandingConsumer(() => new Promise(resolve => { finish = resolve }))
-    expect(sendTlLandingToOpenCanvas(landing)).toBe(true)
+    const stop = registerCanvasLandingConsumer(() => new Promise(resolve => { finish = resolve }))
+    expect(sendCanvasLandingToOpenCanvas(landing)).toBe(true)
     stop()
     finish(false)
     await Promise.resolve()
     const reopened = vi.fn(async () => true)
-    stops.push(registerTlLandingConsumer(reopened))
+    stops.push(registerCanvasLandingConsumer(reopened))
     await Promise.resolve()
     expect(reopened).not.toHaveBeenCalled()
   })

@@ -6,6 +6,7 @@
 import { memo, useCallback, useDeferredValue, useEffect, useLayoutEffect, useState, useMemo, useRef, type FC, type MouseEvent } from 'react'
 import type { ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import { DELETE_ROUTE, IMPORT_ROUTE, STORAGE_STATS_ROUTE, ZIP_CANCEL_ROUTE, ZIP_PROGRESS_ROUTE, ZIP_ROUTE, imageUrlFor, previewUrlFor, thumbUrlFor, vaultUrlFor, type ImageProvider } from '../shared.js'
+import { ImageLightbox, getSharedViewer } from './viewer/index.js'
 import {
   Image as ImageIcon,
   SlidersHorizontal,
@@ -40,7 +41,7 @@ import {
   type GalleryItem,
 } from './gallery-store.js'
 import { StudioView } from './studio-view.js'
-import { deselectStudioTlCanvases } from './tl/studio-tl-canvas.js'
+import { deselectStudioCanvases } from './canvas/studio-canvas.js'
 import { InspirationView } from './inspiration-view.js'
 import { evictAttachmentCache, fetchAttachmentBlob } from './image-cache.js'
 import { shouldShowBatchBar } from './gallery-batch-bar.js'
@@ -80,7 +81,7 @@ export interface GalleryViewTabProps {
   inSidebar?: boolean
   /** Sub-tab opened first; the sidebar variant starts on the studio workbench. */
   defaultTab?: TabKey
-  /** Canvas surface the studio opens with; the sidebar variant shows the tldraw infinite canvas directly. */
+  /** Canvas surface the studio opens with; the sidebar variant shows the infinite canvas directly. */
   initialCanvasSurface?: 'preview' | 'infinite'
   /**
    * Sidebar tab visibility reader injected by DSH's `sidebar.right.pane.tab`
@@ -127,7 +128,7 @@ export const GalleryViewTab: FC<GalleryViewTabProps> = (props) => {
   // sidebar tab hook; the main-area conversation tab passes none.
   const tabVisible = useTabInfo?.().tab?.visible
   useEffect(() => {
-    if (tabVisible === false) deselectStudioTlCanvases()
+    if (tabVisible === false) deselectStudioCanvases()
   }, [tabVisible])
 
   useEffect(() => {
@@ -1731,120 +1732,64 @@ export const GalleryViewTab: FC<GalleryViewTabProps> = (props) => {
 
       {/* 4. Lightbox Preview Modal */}
       {previewItem && (
-        <div
-          className="dsh-ig-lightbox-backdrop"
-          onClick={handleClosePreview}
-        >
-          {/* Top Bar: Info, Index Counter & Close */}
-          <div
-            className="dsh-ig-lightbox-topbar"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="dsh-ig-lightbox-meta">
-              <span className="dsh-ig-tag">{previewItem.provider === 'import' ? t('filterImport') : previewItem.provider}</span>
-              {previewItem.model ? (
-                <span className="dsh-ig-tag dsh-ig-tag-model">{previewItem.model}</span>
-              ) : null}
-              {currentPreviewIndex >= 0 && (
-                <span className="dsh-ig-lightbox-counter">
-                  {currentPreviewIndex + 1} / {filteredItems.length}
-                </span>
-              )}
-            </div>
-            <button
-              type="button"
-              className="dsh-ig-lightbox-close-btn"
-              title={t('close')}
-              onClick={handleClosePreview}
-            >
-              <X size={18} />
-            </button>
-          </div>
-
-          {/* Floating Prev Button (Left) */}
-          <button
-            type="button"
-            className="dsh-ig-lightbox-nav-btn dsh-ig-lightbox-nav-prev"
-            title={t('prevImage')}
-            disabled={!hasPrev}
-            onClick={(e) => {
-              e.stopPropagation()
-              goToPrev()
-            }}
-          >
-            <ChevronLeft size={24} />
-          </button>
-
-          {/* Floating Next Button (Right) */}
-          <button
-            type="button"
-            className="dsh-ig-lightbox-nav-btn dsh-ig-lightbox-nav-next"
-            title={t('nextImage')}
-            disabled={!hasNext}
-            onClick={(e) => {
-              e.stopPropagation()
-              goToNext()
-            }}
-          >
-            <ChevronRight size={24} />
-          </button>
-
-          {/* Centered Image / Loading state */}
-          <div className="dsh-ig-lightbox-img-wrap" onClick={(e) => e.stopPropagation()}>
-            {/* Render the image first: the GET route paints progressively, and
-                gating it on previewLoading left the spinner on screen forever
-                because the <img> never mounted to fire onLoad. */}
-            {previewUrl ? (
-              <img
-                className="dsh-ig-lightbox-img"
-                src={previewUrl}
-                alt={previewItem.prompt}
-                decoding="async"
-                onLoad={() => setPreviewLoading(false)}
-                onError={() => {
-                  const failedUrl = previewUrl
-                  // A blob URL that cannot be decoded is terminal; retrying
-                  // would bounce between the original and a fresh blob forever.
-                  if (failedUrl.startsWith('blob:')) {
-                    setPreviewLoading(false)
-                    return
-                  }
-                  const original = imageUrlFor(previewItem.attachment)
-                  if (failedUrl !== original) {
-                    // The 1600 px variant is unavailable; fall back to the
-                    // original GET before giving up on the route entirely.
-                    if (previewUrlRef.current !== null) URL.revokeObjectURL(previewUrlRef.current)
-                    previewUrlRef.current = null
-                    setPreviewBlob(null)
-                    setPreviewUrl(original)
-                    return
-                  }
-                  const requestId = previewRequestRef.current
-                  fetchAttachmentBlob(previewItem.attachment)
-                    .then((fetched) => {
-                      if (previewRequestRef.current !== requestId) return
-                      if (previewUrlRef.current !== null) URL.revokeObjectURL(previewUrlRef.current)
-                      const objectUrl = URL.createObjectURL(fetched)
-                      previewUrlRef.current = objectUrl
-                      setPreviewBlob(fetched)
-                      setPreviewUrl(objectUrl)
-                      setPreviewLoading(false)
-                    })
-                    .catch(() => setPreviewLoading(false))
-                }}
-              />
+        <ImageLightbox
+          items={[{
+            id: previewItem.id,
+            src: previewUrl ?? imageUrlFor(previewItem.attachment),
+            name: `dsh-${previewItem.provider}-${previewItem.id.slice(0, 8)}`,
+            width: previewItem.attachment.width || undefined,
+            height: previewItem.attachment.height || undefined,
+            prompt: previewItem.prompt,
+            readBlob: async () => previewItem.original !== undefined
+              ? await fetchOriginalBlob(previewItem)
+              : previewBlob ?? await fetchAttachmentBlob(previewItem.attachment),
+          }]}
+          index={0}
+          onIndex={() => {}}
+          onPrev={goToPrev}
+          onNext={goToNext}
+          hasPrev={hasPrev}
+          hasNext={hasNext}
+          onClose={handleClosePreview}
+          t={t}
+          service={getSharedViewer()?.service}
+          commitAnnotations={getSharedViewer()?.commit}
+          topMeta={<>
+            <span className="dsh-ig-tag">{previewItem.provider === 'import' ? t('filterImport') : previewItem.provider}</span>
+            {previewItem.model ? <span className="dsh-ig-tag dsh-ig-tag-model">{previewItem.model}</span> : null}
+            {currentPreviewIndex >= 0 ? (
+              <span className="dsh-ig-lightbox-counter">{currentPreviewIndex + 1} / {filteredItems.length}</span>
             ) : null}
-          </div>
-
-          {/* Bottom Floating Pill Bar: Prompt & Actions */}
-          <div
-            className="dsh-ig-lightbox-bottombar"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="dsh-ig-lightbox-prompt-text" title={previewItem.prompt}>
-              {previewItem.prompt}
-            </div>
-            <div className="dsh-ig-lightbox-actions">
+          </>}
+          prompt={previewItem.prompt}
+          onImageError={(_item, currentSrc) => {
+            // A blob URL that cannot be decoded is terminal; retrying would
+            // bounce between the original and a fresh blob forever.
+            if (currentSrc.startsWith('blob:')) { setPreviewLoading(false); return }
+            const original = imageUrlFor(previewItem.attachment)
+            if (currentSrc !== original) {
+              // The 1600 px variant is unavailable; fall back to the original
+              // GET before giving up on the route entirely.
+              if (previewUrlRef.current !== null) URL.revokeObjectURL(previewUrlRef.current)
+              previewUrlRef.current = null
+              setPreviewBlob(null)
+              setPreviewUrl(original)
+              return
+            }
+            const requestId = previewRequestRef.current
+            fetchAttachmentBlob(previewItem.attachment)
+              .then((fetched) => {
+                if (previewRequestRef.current !== requestId) return
+                if (previewUrlRef.current !== null) URL.revokeObjectURL(previewUrlRef.current)
+                const objectUrl = URL.createObjectURL(fetched)
+                previewUrlRef.current = objectUrl
+                setPreviewBlob(fetched)
+                setPreviewUrl(objectUrl)
+                setPreviewLoading(false)
+              })
+              .catch(() => setPreviewLoading(false))
+          }}
+          actions={<>
               <button
                 type="button"
                 className="dsh-ig-lightbox-btn"
@@ -1940,9 +1885,8 @@ export const GalleryViewTab: FC<GalleryViewTabProps> = (props) => {
                 <Trash2 size={14} />
                 <span>{t('delete')}</span>
               </button>
-            </div>
-          </div>
-        </div>
+          </>}
+        />
       )}
     </div>
   )

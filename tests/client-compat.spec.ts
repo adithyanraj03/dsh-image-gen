@@ -7,6 +7,11 @@ import * as plugin from '../src/client/index.js'
 import { imageRef } from '../src/client/image-ref.js'
 import { IMAGE_RESULT_NODE_KIND } from '../src/client/image-result-node.js'
 
+// The canvas editor needs a DOM; these suites exercise the plugin wiring and
+// card rendering, so the Excalidraw surface is mocked while the adapter logic
+// stays real in its own specs.
+vi.mock('@excalidraw/excalidraw', () => ({ Excalidraw: () => null }))
+
 function snapshotStore<T>(initial: T) {
   let value = initial
   const listeners = new Set<() => void>()

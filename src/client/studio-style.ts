@@ -159,8 +159,8 @@ body[data-ds-dark-theme] .dsh-ig-workbench{--ig-danger:#f08c8c;--ig-warn:#e5b76a
 .dsh-ig-save-gallery-btn:hover{background:rgba(47,100,245,.12)!important}
 .dsh-ig-save-gallery-btn.is-saved{color:var(--ig-fg-2)!important;border-color:var(--ig-line)!important;background:transparent!important}
 
-/* tldraw infinite canvas surface (P0 spike) */
-.dsh-ig-tl-canvas{position:relative;flex:1 1 0;height:0;min-height:0;overflow:hidden;isolation:isolate}
+/* Infinite canvas surface (Excalidraw mount container) */
+.dsh-ig-canvas-surface{position:relative;flex:1 1 0;height:0;min-height:0;overflow:hidden;isolation:isolate}
 .dsh-ig-canvas-sync-status{position:absolute;z-index:500;bottom:48px;left:60px;right:16px;display:flex;align-items:center;justify-content:center;gap:8px;max-width:560px;margin:auto;padding:7px 12px;border:1px solid var(--ig-line);border-radius:10px;background:var(--ig-bg);color:var(--ig-fg-2);box-shadow:0 2px 8px #0001;font-size:12px;pointer-events:none}
 .dsh-ig-canvas-sync-status[data-phase='error']{color:var(--ig-danger);border-color:rgba(239,68,68,.4)}
 .dsh-ig-canvas-sync-status button{pointer-events:auto;flex-shrink:0;border:1px solid currentColor;border-radius:6px;padding:3px 9px;background:transparent;color:inherit;cursor:pointer}
@@ -183,5 +183,16 @@ body[data-ds-dark-theme] .dsh-ig-workbench{--ig-danger:#f08c8c;--ig-warn:#e5b76a
 .dsh-ig-field-grid.is-output-grid{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
 .dsh-ig-page-in-sidebar .dsh-ig-recent-item{min-width:0}
 .dsh-ig-page-in-sidebar .dsh-ig-generate-panel .dsh-ig-field-grid{grid-template-columns:1fr}
-.dsh-ig-page-in-sidebar .dsh-ig-tl-canvas{min-height:280px}
+.dsh-ig-page-in-sidebar .dsh-ig-canvas-surface{min-height:280px}
+/* Toolbar polish: labels never wrap or compress; when the canvas column narrows
+   (Generate panel open) collapse to icon-only instead of truncating mid-word. */
+.dsh-ig-canvas-toolbar button{white-space:nowrap;flex:0 0 auto}
+.dsh-ig-canvas-toolbar button span{white-space:nowrap}
+.dsh-ig-canvas-toolbar-left,.dsh-ig-canvas-toolbar-right{overflow:hidden;min-width:0}
+.dsh-ig-canvas-column{container-type:inline-size;container-name:igcanvas}
+@container igcanvas (max-width:820px){
+  .dsh-ig-canvas-toolbar button span{display:none}
+  .dsh-ig-canvas-toolbar button{padding:0 7px}
+  .dsh-ig-zoom-display{min-width:32px}
+}
 `

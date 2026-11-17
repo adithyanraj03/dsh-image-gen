@@ -1,6 +1,3 @@
-// Must stay the first import: it shims CSS.supports before tldraw's
-// module-scope environment probe runs (#40); see css-supports-shim.ts.
-import './tl/css-supports-shim.js'
 import { installDatalistScrollFix } from './datalist-scroll-fix.js'
 import { compatEditFormat } from '../watermark.js'
 import { useEffect, useState, useRef, type ChangeEvent, type FormEvent } from 'react'
@@ -58,11 +55,12 @@ import { GalleryViewTab, type GalleryViewTabProps, type LocaleService } from './
 import { GeneratedImageCard, GeneratedImagesCard, PromotedImageResultNode, type ImageCardFace } from './image-result-view.js'
 export { GeneratedImageCard, GeneratedImagesCard, PromotedImageResultNode } from './image-result-view.js'
 import { DICT, type DictKey } from './plugin-i18n.js'
+import { registerViewer, type ViewerT } from './viewer/index.js'
 import { PLUGIN_STYLE } from './plugin-style.js'
-import { createCanvasSessionSelection, startConversationLandings, type CanvasSessions, type CanvasSessionSelection } from './tl/conversation-landings.js'
+import { createCanvasSessionSelection, startConversationLandings, type CanvasSessions, type CanvasSessionSelection } from './canvas/conversation-landings.js'
 import { STUDIO_STYLE } from './studio-style.js'
-import { TL_CSS } from './tl/tl-css.js'
-import { TL_THEME_CSS } from './tl/tl-theme-css.js'
+import { CANVAS_CSS } from './canvas/canvas-css.js'
+import { CANVAS_SKIN_CSS } from './canvas/canvas-skin-css.js'
 import { INSPIRATION_STYLE } from './inspiration-style.js'
 import {
   IMAGE_RESULT_NODE_KIND,
@@ -260,12 +258,22 @@ export function apply(ctx: Context): void {
   ctx.effect(() => {
     const style = document.createElement('style')
     style.dataset.plugin = 'dsh-image-gen'
-    style.textContent = `${PLUGIN_STYLE}\n${STUDIO_STYLE}\n${INSPIRATION_STYLE}\n${PROVIDER_PILL_STYLE}\n${TL_CSS}\n${TL_THEME_CSS}`
+    style.textContent = `${PLUGIN_STYLE}\n${STUDIO_STYLE}\n${INSPIRATION_STYLE}\n${PROVIDER_PILL_STYLE}\n${CANVAS_CSS}\n${CANVAS_SKIN_CSS}`
     document.head.appendChild(style)
     return () => {
       style.remove()
     }
   }, 'dsh-image-gen: styles')
+
+  // Ported image viewer (dsh-image-viewer core): public `imageGenViewer` service,
+  // standalone shell.overlay, stage CSS, and the annotated-PNG → draft commit.
+  const viewerLang = locale?.getSnapshot?.()?.active?.startsWith('en') ? 'en' : 'zh'
+  const viewerT: ViewerT = (key, values) => {
+    let text: string = (viewerLang === 'en' ? DICT.en : DICT.zh)[key] ?? DICT.zh[key] ?? key
+    if (values) for (const [k, v] of Object.entries(values)) text = text.replaceAll(`{${k}}`, v)
+    return text
+  }
+  registerViewer(ctx as unknown as Parameters<typeof registerViewer>[0], viewerT)
 
   // One-time cleanup: the workflow canvas tab was removed; drop its orphaned
   // IndexedDB database. Best-effort only: a missing database succeeds
@@ -424,7 +432,7 @@ export function apply(ctx: Context): void {
 
   // 4. Right-sidebar studio tab (DSH 0.1.5 official `sidebar.right.pane.tab`
   // seat): the native conversation keeps the main column while the workbench -
-  // tldraw infinite canvas + generate form + recent list - docks beside it in
+  // infinite canvas + generate form + recent list - docks beside it in
   // the old image-details seat. Two-stage registration, exactly as
   // ui-sidebar-documentpreview does it: the type into `sidebarRightTabs`, the
   // body into the keyed seat under the definition's id. Deferred injection

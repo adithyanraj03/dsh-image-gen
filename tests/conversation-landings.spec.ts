@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { startConversationLandings, type CanvasSessions } from '../src/client/tl/conversation-landings.js'
-import { clearTlLandings, registerTlLandingConsumer } from '../src/client/tl/tl-canvas-bridge.js'
+import { startConversationLandings, type CanvasSessions } from '../src/client/canvas/conversation-landings.js'
+import { clearCanvasLandings, registerCanvasLandingConsumer } from '../src/client/canvas/canvas-bridge.js'
 
 function store<T>(initial: T) {
   let value = initial
@@ -28,13 +28,13 @@ function feed() {
 }
 
 const stops: Array<() => void> = []
-afterEach(() => { for (const stop of stops.splice(0).reverse()) stop(); clearTlLandings() })
+afterEach(() => { for (const stop of stops.splice(0).reverse()) stop(); clearCanvasLandings() })
 function harness(snapshot: object, current?: ReturnType<typeof store<{ key?: string }>>) {
   const first = feed(), second = feed()
   const list = store(snapshot)
   const sessions = { list, binding: vi.fn((id: string) => ({ eventSource: id === 's2' ? second.source : first.source })) }
   const consumer = vi.fn(async () => true)
-  stops.push(registerTlLandingConsumer(consumer))
+  stops.push(registerCanvasLandingConsumer(consumer))
   stops.push(startConversationLandings(sessions as unknown as CanvasSessions, current))
   return { first, second, list, sessions, consumer }
 }

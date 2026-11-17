@@ -3,9 +3,9 @@
  * Completely decoupled from gallery-view and studio-view to prevent circular dependencies.
  */
 
-/** Convert a Blob to a data URL. Used for tldraw image assets, which need a
- *  self-contained src; the session canvas keeps them in memory only (no
- *  persistenceKey, nothing touches disk). */
+/** Convert a Blob to a data URL. Used for canvas image files, which need a
+ *  self-contained dataURL; the canvas keeps them in its files map and the
+ *  local IndexedDB snapshot, never in gallery storage. */
 export function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()

@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type FC } from 'react'
 import type { ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
+import { ImageLightbox, getSharedViewer } from './viewer/index.js'
 import {
   AlertTriangle,
   BookmarkPlus,
@@ -37,10 +38,11 @@ import { deleteGalleryItem, getGalleryItems, saveGalleryItem, subscribeGallery, 
 import { copyImageBlob, downloadBlobUrl, formatRelativeTime } from './browser-image-utils.js'
 import { buildComparisonTargets, comparisonOptionUnion, comparisonOutputOptions, initialComparisonProviders } from './multi-model-compare.js'
 import { WatermarkControl } from './watermark-control.js'
-import { clearStudioTlCanvases, StudioTlCanvas } from './tl/studio-tl-canvas.js'
-import { pushTlLandings } from './tl/tl-canvas-bridge.js'
-import { GalleryCanvasButton } from './tl/gallery-canvas-button.js'
-import { startGalleryImageDrag } from './tl/gallery-image-transfer.js'
+import { clearStudioCanvases, StudioCanvas } from './canvas/studio-canvas.js'
+import type { CanvasLandingItem } from './canvas/canvas-bridge.js'
+import { pushCanvasLandings } from './canvas/canvas-bridge.js'
+import { GalleryCanvasButton } from './canvas/gallery-canvas-button.js'
+import { startGalleryImageDrag } from './canvas/gallery-image-transfer.js'
 import type { LocaleService } from './gallery-view.js'
 import {
   BatchCanvasItem,
@@ -114,6 +116,12 @@ const COPY = {
     findInspiration: '找灵感',
     infiniteCanvasHint: '无限画布与侧边栏会话联动，才是完整功能。打开 DSH 右侧边栏的「图像工作台」即可解锁。',
     clearCanvas: '清空画布', clearCanvasDescription: '将永久清空所有画布页面的内容、图片资产和撤销历史。画廊已保存的卡片及原图不受影响，此操作无法撤销。', canvasCleared: '画布已清空，画廊不受影响',
+    igvDialog: '图片查看器', igvClose: '关闭', igvFit: '适应窗口', igvActual: '原始大小',
+    igvAnnotate: '标记区域', igvCancelAnnotate: '取消标记', igvRegions: '区域备注', igvRegionHint: '点击图片中的位置，然后填写备注。',
+    igvNote: '区域 {value}', igvNotePlaceholder: '描述这里需要怎样调整…', igvRemoveNote: '删除区域备注',
+    igvCopyNotes: '复制备注', igvCopied: '已复制', igvCopyFailed: '复制失败，请重试', igvPrevious: '上一张图片', igvNext: '下一张图片',
+    igvZoomHint: '滚轮缩放 · 拖动查看 · 双击切换原始大小', igvLoading: '正在加载图片…', igvLoadFailed: '图片加载失败。', igvRetry: '重试',
+    igvAddingDraft: '正在把图片和备注加入草稿…', igvDraftFailed: '未能加入草稿。请回到原会话并确保输入框可编辑，再关闭以重试。', igvCloseWithoutDraft: '仅关闭，不加入草稿',
   },
   en: {
     title: 'Cloud Image Studio', configured: 'API configured', unconfigured: 'Not configured', recent: 'Recent generations', empty: 'No generated images yet',
@@ -152,6 +160,12 @@ const COPY = {
     findInspiration: 'Find inspiration',
     infiniteCanvasHint: 'The infinite canvas is at its best when linked with the sidebar conversation. Open Image Studio from the DSH right sidebar to unlock the full experience.',
     clearCanvas: 'Clear canvas', clearCanvasDescription: 'Permanently clear all canvas pages, image assets, and undo history. Saved gallery cards and original images are unaffected. This cannot be undone.', canvasCleared: 'Canvas cleared. Gallery unchanged.',
+    igvDialog: 'Image viewer', igvClose: 'Close', igvFit: 'Fit', igvActual: '100%',
+    igvAnnotate: 'Mark region', igvCancelAnnotate: 'Cancel marking', igvRegions: 'Region notes', igvRegionHint: 'Click a point on the image, then add a note.',
+    igvNote: 'Region {value}', igvNotePlaceholder: 'Describe what should change here…', igvRemoveNote: 'Remove region note',
+    igvCopyNotes: 'Copy notes', igvCopied: 'Copied', igvCopyFailed: 'Copy failed. Try again.', igvPrevious: 'Previous image', igvNext: 'Next image',
+    igvZoomHint: 'Wheel to zoom · drag to pan · double-click for 100%', igvLoading: 'Loading image…', igvLoadFailed: 'Image could not be loaded.', igvRetry: 'Retry',
+    igvAddingDraft: 'Adding image and notes to draft…', igvDraftFailed: 'Could not add to draft. Return to the original session and keep the composer editable, then close to retry.', igvCloseWithoutDraft: 'Close without adding',
   },
 } as const
 
@@ -177,7 +191,7 @@ export const StudioView: FC<{
   initialReference?: File | undefined
   /**
    * Canvas surface opened first: 'preview' (single-image viewer, the default)
-   * or 'infinite' (the tldraw editor). The right-sidebar variant opens the
+   * or 'infinite' (the Excalidraw editor). The right-sidebar variant opens the
    * infinite canvas directly - mirroring chat-generated images while the
    * native conversation runs beside it is the point of the split.
    */
@@ -230,6 +244,8 @@ export const StudioView: FC<{
     toast: message => railActionsRef.current?.toast(message),
   }), [])
   const [selected, setSelected] = useState<GalleryItem | null>(null)
+  /** Image armed for click-to-place on the infinite canvas (null = unarmed). */
+  const [placeItem, setPlaceItem] = useState<CanvasLandingItem | null>(null)
   const [mode, setMode] = useState<Mode>('generate')
   const [provider, setProvider] = useState<StudioProvider>('google')
   const [channel, setChannel] = useState<string | undefined>(undefined)
@@ -260,7 +276,7 @@ export const StudioView: FC<{
   const hasDraggedRef = useRef(false)
 
   // Canvas surface: 'preview' keeps the single-image viewer (fake canvas),
-  // 'infinite' mounts the tldraw editor. Defaults to 'preview' so existing
+  // 'infinite' mounts the Excalidraw editor. Defaults to 'preview' so existing
   // behaviour is untouched until the toggle is clicked; a caller may open the
   // infinite canvas directly (the right-sidebar studio variant does).
   const [canvasSurface, setCanvasSurface] = useState<'preview' | 'infinite'>(initialCanvasSurface ?? 'preview')
@@ -598,10 +614,24 @@ export const StudioView: FC<{
     setSelectedBatchIds([])
     setBatchKind(null)
     setSelected(item)
+    // On the infinite canvas a rail click arms click-to-place: the next canvas
+    // click drops the image at that point. The preview surface keeps plain select.
+    setPlaceItem(canvasSurface === 'infinite'
+      ? { galleryId: item.id, attachment: item.attachment, prompt: item.prompt, provider: item.provider, model: item.model }
+      : null)
     // No tab switch: the middle canvas shows the selection; the right panel
     // stays on whatever the user is working in (form or chat).
     resetFit()
   }
+
+  // Disarm click-to-place on Escape or when leaving the infinite surface.
+  useEffect(() => {
+    if (canvasSurface !== 'infinite') { setPlaceItem(null); return }
+    if (placeItem == null) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPlaceItem(null) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [canvasSurface, placeItem])
 
   const startNew = () => {
     setCurrentBatch(null)
@@ -963,11 +993,11 @@ export const StudioView: FC<{
         setBatchKind(galleryEntries.length > 1 ? 'multi-model' : null)
         setSelected(galleryEntries[0]!)
         resetFit()
-        // Mirror the comparison batch onto the tldraw infinite canvas, but
+        // Mirror the comparison batch onto the infinite canvas, but
         // only when the user was working there when the request started (see
         // the single-generation path).
         if (startedOnInfinite) {
-          pushTlLandings(galleryEntries.map(entry => ({
+          pushCanvasLandings(galleryEntries.map(entry => ({
             galleryId: entry.id,
             attachment: entry.attachment,
             prompt: entry.prompt,
@@ -1038,12 +1068,12 @@ export const StudioView: FC<{
         setSelected(galleryEntries[0]!)
       }
       resetFit()
-      // Mirror the generated batch onto the tldraw infinite canvas, but only
+      // Mirror the generated batch onto the infinite canvas, but only
       // when the user was working there when the request started. Preview-mode
       // generations stay in the preview pane until saved: unsaved attempts
       // must not pile up on the canvas work surface.
       if (startedOnInfinite) {
-        pushTlLandings(galleryEntries.map(entry => ({
+        pushCanvasLandings(galleryEntries.map(entry => ({
           galleryId: entry.id,
           attachment: entry.attachment,
           prompt: entry.prompt,
@@ -1152,7 +1182,7 @@ export const StudioView: FC<{
     // Saving is the "keep this" signal: land the saved images on the infinite
     // canvas even if they were generated in preview mode (dedupe keeps
     // already-landed ones from duplicating).
-    pushTlLandings(saved.map(item => ({
+    pushCanvasLandings(saved.map(item => ({
       galleryId: item.id,
       attachment: item.attachment,
       prompt: item.prompt,
@@ -1552,7 +1582,7 @@ export const StudioView: FC<{
             </div>
           )}
           {canvasSurface === 'infinite' ? (
-            <StudioTlCanvas lang={lang} />
+            <StudioCanvas lang={lang} placeItem={placeItem} onPlaced={() => setPlaceItem(null)} />
           ) : (
           <div
             className={`dsh-ig-canvas ${isDragging ? 'is-dragging' : ''}`}
@@ -1846,78 +1876,37 @@ export const StudioView: FC<{
         )}
       </div>
 
-      {/* Unified Pure Centered Lightbox Modal (Aligned with Gallery) */}
+      {/* Unified Pure Centered Lightbox Modal — ported viewer core + region notes */}
       {lightboxOpen && selected !== null && (
-        <div className="dsh-ig-lightbox-backdrop" onClick={() => setLightboxOpen(false)}>
-          <div className="dsh-ig-lightbox-topbar">
-            <div className="dsh-ig-lightbox-meta">
-              <span className="dsh-ig-tag">{selected.provider}</span>
-              <span className="dsh-ig-tag dsh-ig-tag-model">{selected.model}</span>
-              {currentBatch && currentBatch.length > 1 && (
-                <span className="dsh-ig-tag">
-                  {currentBatch.findIndex(i => i.id === selected.id) + 1} / {currentBatch.length}
-                </span>
-              )}
-              {selected.attachment.width && selected.attachment.height ? (
-                <span className="dsh-ig-tag">{selected.attachment.width} × {selected.attachment.height}</span>
-              ) : null}
-            </div>
-            <button
-              type="button"
-              className="dsh-ig-lightbox-close-btn"
-              title={t('close')}
-              onClick={() => setLightboxOpen(false)}
-            >
-              <X size={18} />
-            </button>
-          </div>
-
-          {currentBatch && currentBatch.length > 1 && (
-            <>
-              <button
-                type="button"
-                className="dsh-ig-lightbox-nav is-prev"
-                onClick={e => {
-                  e.stopPropagation()
-                  stepLightbox(-1)
-                }}
-                title="上一张"
-              >
-                <ChevronLeft size={24} />
-              </button>
-              <button
-                type="button"
-                className="dsh-ig-lightbox-nav is-next"
-                onClick={e => {
-                  e.stopPropagation()
-                  stepLightbox(1)
-                }}
-                title="下一张"
-              >
-                <ChevronRight size={24} />
-              </button>
-            </>
-          )}
-
-          <div className="dsh-ig-lightbox-img-wrap" onClick={e => e.stopPropagation()}>
-            {image.url !== null ? (
-              <img
-                className="dsh-ig-lightbox-img"
-                src={image.url}
-                alt={selected.prompt}
-              />
-            ) : (
-              <div className="dsh-ig-lightbox-loading">
-                <div className="dsh-ig-lightbox-spinner" />
-              </div>
+        <ImageLightbox
+          items={[{
+            id: selected.id,
+            src: image.url ?? '',
+            name: `dsh-${selected.provider}-${selected.id.slice(-8)}`,
+            width: selected.attachment.width || undefined,
+            height: selected.attachment.height || undefined,
+            prompt: selected.prompt,
+            readBlob: async () => image.blob ?? await fetchAttachmentBlob(selected.attachment),
+          }]}
+          index={0}
+          onIndex={() => {}}
+          onPrev={() => stepLightbox(-1)}
+          onNext={() => stepLightbox(1)}
+          hasPrev={currentBatch !== null && currentBatch.length > 1}
+          hasNext={currentBatch !== null && currentBatch.length > 1}
+          onClose={() => setLightboxOpen(false)}
+          t={t}
+          service={getSharedViewer()?.service}
+          commitAnnotations={getSharedViewer()?.commit}
+          topMeta={<>
+            <span className="dsh-ig-tag">{selected.provider}</span>
+            <span className="dsh-ig-tag dsh-ig-tag-model">{selected.model}</span>
+            {currentBatch && currentBatch.length > 1 && (
+              <span className="dsh-ig-lightbox-counter">{currentBatch.findIndex(i => i.id === selected.id) + 1} / {currentBatch.length}</span>
             )}
-          </div>
-
-          <div className="dsh-ig-lightbox-bottombar" onClick={e => e.stopPropagation()}>
-            <div className="dsh-ig-lightbox-prompt-text" title={selected.prompt}>
-              {selected.prompt}
-            </div>
-            <div className="dsh-ig-lightbox-actions">
+          </>}
+          prompt={selected.prompt}
+          actions={<>
               <button
                 type="button"
                 className="dsh-ig-lightbox-btn"
@@ -1975,9 +1964,8 @@ export const StudioView: FC<{
                 <Heart size={14} fill={selected.isFavorite ? '#ef4444' : 'none'} color={selected.isFavorite ? '#ef4444' : 'currentColor'} />
                 <span>{selected.isFavorite ? t('favorited') : t('favorite')}</span>
               </button>
-            </div>
-          </div>
-        </div>
+          </>}
+        />
       )}
 
       {showClearCanvasModal && (
@@ -1991,7 +1979,7 @@ export const StudioView: FC<{
               <button autoFocus type="button" className="dsh-ig-workbench-modal-cancel" onClick={() => setShowClearCanvasModal(false)}>{t('cancel')}</button>
               <button type="button" className="dsh-ig-workbench-modal-danger" onClick={() => {
                 try {
-                  if (!clearStudioTlCanvases()) { flash(t('loading')); return }
+                  if (!clearStudioCanvases()) { flash(t('loading')); return }
                   setShowClearCanvasModal(false)
                   flash(t('canvasCleared'))
                 } catch (error) {

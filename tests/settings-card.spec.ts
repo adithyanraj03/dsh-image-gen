@@ -2,6 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ReactElement, ReactNode } from 'react'
 import { ImageGenerationSettingsCard } from '../src/client/index.js'
 
+// The canvas editor needs a DOM; the settings form never renders it, but the
+// client entry imports it, so mock the package for this node suite.
+vi.mock('@excalidraw/excalidraw', () => ({ Excalidraw: () => null }))
+
 // Exercise the actual rendered form handlers without a DOM dependency. Effects
 // (host subscriptions and status polling) are outside this form-action harness.
 const hooks = vi.hoisted(() => ({ values: [] as unknown[], cursor: 0, scopeEffects: [] as Array<() => unknown> }))

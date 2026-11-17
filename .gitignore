@@ -10,3 +10,6 @@ lib/
 
 # generated test output from smoke-testing the image providers
 /dsh-image-gen/
+
+# banner composition scratch (resized icon/screenshots)
+docs/assets/.bannertmp/

@@ -1,12 +1,13 @@
 /**
  * One-shot delivery into the persistent canvas document. The first mounted
- * editor handles a batch; tldraw synchronizes the document to other editors.
- * Delivered items are removed, so deleting a shape never triggers a replay.
+ * editor handles a batch; the document is shared, so other surfaces see the
+ * same elements. Delivered items are removed, so deleting an element never
+ * triggers a replay.
  */
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 
-export interface TlLandingItem {
-  /** Gallery item id; also used to dedupe shapes via shape.meta.galleryId. */
+export interface CanvasLandingItem {
+  /** Gallery item id; also used to dedupe elements via customData.galleryId. */
   galleryId: string
   attachment: ImageAttachmentRef
   /** Live conversation delivery; discard unfinished delivery when all canvases close. */
@@ -14,45 +15,45 @@ export interface TlLandingItem {
   /** Explicit history actions must not resume after the last canvas closes. */
   onlyWhileCanvasOpen?: boolean
   /**
-   * Generation provenance copied onto the landed shape's meta: the canvas
-   * digest then tells the model how each image was made, so "regenerate this"
-   * or "vary this" reuses the original prompt and model instead of guessing.
-   * All optional; shapes landed from older paths simply carry none.
+   * Generation provenance copied onto the landed element's customData: the
+   * canvas digest then tells the model how each image was made, so "regenerate
+   * this" or "vary this" reuses the original prompt and model instead of
+   * guessing. All optional; elements landed from older paths carry none.
    */
   prompt?: string
   provider?: string
   model?: string
 }
 
-type TlLandingConsumer = (items: readonly TlLandingItem[]) => Promise<boolean>
-const pending = new Map<string, TlLandingItem>()
-const consumers = new Set<TlLandingConsumer>()
+type CanvasLandingConsumer = (items: readonly CanvasLandingItem[]) => Promise<boolean>
+const pending = new Map<string, CanvasLandingItem>()
+const consumers = new Set<CanvasLandingConsumer>()
 const availabilityListeners = new Set<() => void>()
 let delivering = false
 let generation = 0
 
 /** History actions must not silently queue into a canvas that is not open. */
-export function hasTlLandingConsumer(): boolean { return consumers.size > 0 }
-export function subscribeTlLandingAvailability(listener: () => void): () => void {
+export function hasCanvasLandingConsumer(): boolean { return consumers.size > 0 }
+export function subscribeCanvasLandingAvailability(listener: () => void): () => void {
   availabilityListeners.add(listener)
   return () => { availabilityListeners.delete(listener) }
 }
-export function sendTlLandingToOpenCanvas(item: TlLandingItem): boolean {
-  if (!hasTlLandingConsumer()) return false
-  pushTlLandings([{ ...item, onlyWhileCanvasOpen: true }])
+export function sendCanvasLandingToOpenCanvas(item: CanvasLandingItem): boolean {
+  if (!hasCanvasLandingConsumer()) return false
+  pushCanvasLandings([{ ...item, onlyWhileCanvasOpen: true }])
   return true
 }
 
 /** Invalidates async landings that started before the user cleared the canvas. */
-export function getTlLandingGeneration(): number { return generation }
+export function getCanvasLandingGeneration(): number { return generation }
 
-export function clearTlLandings(): void {
+export function clearCanvasLandings(): void {
   generation += 1
   pending.clear()
 }
 
-/** Queue freshly generated images for the tldraw canvases. Safe to call anywhere. */
-export function pushTlLandings(newItems: readonly TlLandingItem[]): void {
+/** Queue freshly generated images for the canvases. Safe to call anywhere. */
+export function pushCanvasLandings(newItems: readonly CanvasLandingItem[]): void {
   for (const item of newItems) {
     if (!pending.has(item.galleryId)) pending.set(item.galleryId, item)
   }
@@ -60,13 +61,13 @@ export function pushTlLandings(newItems: readonly TlLandingItem[]): void {
 }
 
 /** Conversation results are admitted only while a canvas is mounted. */
-export function pushTlLandingsLive(items: readonly TlLandingItem[]): void {
-  if (consumers.size > 0) pushTlLandings(items)
+export function pushCanvasLandingsLive(items: readonly CanvasLandingItem[]): void {
+  if (consumers.size > 0) pushCanvasLandings(items)
 }
 
 /** Register a ready editor. False means it unmounted before committing. */
-export function registerTlLandingConsumer(consumer: TlLandingConsumer): () => void {
-  const wasAvailable = hasTlLandingConsumer()
+export function registerCanvasLandingConsumer(consumer: CanvasLandingConsumer): () => void {
+  const wasAvailable = hasCanvasLandingConsumer()
   consumers.add(consumer)
   if (!wasAvailable) for (const listener of availabilityListeners) listener()
   void deliver()

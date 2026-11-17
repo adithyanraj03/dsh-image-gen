@@ -124,6 +124,12 @@ export const DICT = {
     tasksTitle: '异步任务队列 (Tasks)',
     tasksDesc: '集中管理后台批量生图、多模型并发生成与本地 ComfyUI 耗时任务。支持状态追踪、失败重试与执行耗时分析。',
     comingSoonBadge: '即将推出',
+    igvDialog: '图片查看器', igvClose: '关闭', igvFit: '适应窗口', igvActual: '原始大小',
+    igvAnnotate: '标记区域', igvCancelAnnotate: '取消标记', igvRegions: '区域备注', igvRegionHint: '点击图片中的位置，然后填写备注。',
+    igvNote: '区域 {value}', igvNotePlaceholder: '描述这里需要怎样调整…', igvRemoveNote: '删除区域备注',
+    igvCopyNotes: '复制备注', igvCopied: '已复制', igvCopyFailed: '复制失败，请重试', igvPrevious: '上一张图片', igvNext: '下一张图片',
+    igvZoomHint: '滚轮缩放 · 拖动查看 · 双击切换原始大小', igvLoading: '正在加载图片…', igvLoadFailed: '图片加载失败。', igvRetry: '重试',
+    igvAddingDraft: '正在把图片和备注加入草稿…', igvDraftFailed: '未能加入草稿。请回到原会话并确保输入框可编辑，再关闭以重试。', igvCloseWithoutDraft: '仅关闭，不加入草稿',
   },
   en: {
     // Top Tabs
@@ -249,6 +255,12 @@ export const DICT = {
     tasksTitle: 'Task Queue (Tasks)',
     tasksDesc: 'Centralized view for batch generation, asynchronous ComfyUI runs, live progress tracking, and retry controls.',
     comingSoonBadge: 'Coming Soon',
+    igvDialog: 'Image viewer', igvClose: 'Close', igvFit: 'Fit', igvActual: '100%',
+    igvAnnotate: 'Mark region', igvCancelAnnotate: 'Cancel marking', igvRegions: 'Region notes', igvRegionHint: 'Click a point on the image, then add a note.',
+    igvNote: 'Region {value}', igvNotePlaceholder: 'Describe what should change here…', igvRemoveNote: 'Remove region note',
+    igvCopyNotes: 'Copy notes', igvCopied: 'Copied', igvCopyFailed: 'Copy failed. Try again.', igvPrevious: 'Previous image', igvNext: 'Next image',
+    igvZoomHint: 'Wheel to zoom · drag to pan · double-click for 100%', igvLoading: 'Loading image…', igvLoadFailed: 'Image could not be loaded.', igvRetry: 'Retry',
+    igvAddingDraft: 'Adding image and notes to draft…', igvDraftFailed: 'Could not add to draft. Return to the original session and keep the composer editable, then close to retry.', igvCloseWithoutDraft: 'Close without adding',
   },
 } as const
 

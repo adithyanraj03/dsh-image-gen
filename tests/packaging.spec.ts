@@ -7,17 +7,17 @@ import { describe, expect, it } from 'vitest'
  * Packaging invariants for the published tarball.
  *
  * The client bundle inlines every dependency except its declared externals,
- * so tldraw/lucide-react must stay out of `dependencies`: declaring them
- * there makes consumers download ~150 packages the bundle never loads.
- * The guard test fails as soon as host-side (non-bundled) source starts
- * importing one of them, which is the only way the devDependency move
- * could silently break a release.
+ * so @excalidraw/excalidraw and lucide-react must stay out of `dependencies`:
+ * declaring them there makes consumers download hundreds of packages the
+ * bundle never loads. The guard test fails as soon as host-side (non-bundled)
+ * source starts importing one of them, which is the only way the
+ * devDependency move could silently break a release.
  */
 
 const root = join(fileURLToPath(new URL('.', import.meta.url)), '..')
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 
-const BUNDLED_ONLY = ['tldraw', 'lucide-react']
+const BUNDLED_ONLY = ['@excalidraw/excalidraw', 'lucide-react']
 
 function hostSources(dir: string): string[] {
   const files: string[] = []

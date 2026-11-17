@@ -153,12 +153,12 @@ export interface CanvasSelectionSummary {
 }
 
 /**
- * One live state push from a browser tldraw instance of the workbench canvas.
+ * One live state push from a browser canvas instance of the workbench.
  * The browser owns the canvas; the host keeps only this compact mirror, so
  * the conversation agent can reason about (and look at) what the user sees.
  */
 export interface CanvasStatePush {
-  /** Tldraw editor id; distinguishes simultaneously mounted canvases. */
+  /** Canvas editor id; distinguishes simultaneously mounted canvases. */
   clientInstance: string
   /** False on the final push right before a canvas unmounts. */
   connected: boolean

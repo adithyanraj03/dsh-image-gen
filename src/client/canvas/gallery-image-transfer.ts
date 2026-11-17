@@ -1,12 +1,12 @@
 import type { GalleryItem } from '../gallery-store.js'
-import type { TlLandingItem } from './tl-canvas-bridge.js'
+import type { CanvasLandingItem } from './canvas-bridge.js'
 import { CANVAS_MAX_PROMPT_CHARS } from '../../shared.js'
 
 export const GALLERY_IMAGE_MIME = 'application/x-dsh-image-gen-gallery-image'
 const EXTENSIONS = new Map([['image/png', 'png'], ['image/jpeg', 'jpg'], ['image/webp', 'webp'], ['image/gif', 'gif']])
 type DragStart = { dataTransfer: DataTransfer | null; preventDefault(): void }
 
-export function galleryLanding(item: GalleryItem): TlLandingItem {
+export function galleryLanding(item: GalleryItem): CanvasLandingItem {
   return { galleryId: item.id, attachment: item.attachment, prompt: item.prompt.slice(0, CANVAS_MAX_PROMPT_CHARS), provider: item.provider, model: item.model }
 }
 
@@ -40,7 +40,7 @@ export function startGalleryImageDrag(event: DragStart, item: GalleryItem, blob:
   return false
 }
 
-export function readGalleryImageDrop(transfer: Pick<DataTransfer, 'getData'>): TlLandingItem | undefined {
+export function readGalleryImageDrop(transfer: Pick<DataTransfer, 'getData'>): CanvasLandingItem | undefined {
   try {
     const raw = transfer.getData(GALLERY_IMAGE_MIME)
     if (!raw || raw.length > 64_000) return undefined
