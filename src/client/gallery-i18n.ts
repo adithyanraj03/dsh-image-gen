@@ -136,6 +136,7 @@ export const DICT = {
     igvMarkupUndo: '撤销', igvMarkupClear: '清空', igvMarkupSave: '保存', igvMarkupSaveHint: '把标记烘焙进 PNG 并加入当前会话草稿（不发送）',
     igvMarkupCopy: '复制标记图', igvMarkupDownload: '下载标记图', igvMarkupDownloaded: '已开始下载标记图',
     igvMarkupSaved: '标记图已加入草稿', igvMarkupNoHost: '当前没有可用的会话输入框，请改用复制或下载。', igvMarkupBakeFailed: '标记图生成失败，请重试', igvMarkupTextPrompt: '输入要标注的文字',
+    igvMarkupReplaced: '标记图已替换草稿中的原附件', igvMarkupAddedFallback: '原附件已不在草稿中，标记图已作为新附件加入',
   },
   en: {
     // Top Tabs
@@ -273,6 +274,7 @@ export const DICT = {
     igvMarkupUndo: 'Undo', igvMarkupClear: 'Clear', igvMarkupSave: 'Save', igvMarkupSaveHint: 'Bake marks into a PNG and add it to the current session draft (without sending)',
     igvMarkupCopy: 'Copy marked image', igvMarkupDownload: 'Download marked image', igvMarkupDownloaded: 'Marked image download started',
     igvMarkupSaved: 'Marked image added to draft', igvMarkupNoHost: 'No conversation composer is available. Use Copy or Download instead.', igvMarkupBakeFailed: 'Could not render the marked image. Try again.', igvMarkupTextPrompt: 'Enter the text to place',
+    igvMarkupReplaced: 'Marked image replaced the draft attachment', igvMarkupAddedFallback: 'Original attachment is no longer in the draft — marked image added alongside',
   },
 } as const
 

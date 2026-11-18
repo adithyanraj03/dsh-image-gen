@@ -33,6 +33,8 @@ export interface ViewerItem {
   download?: ViewerDownload | undefined
   actions?: ViewerAction[] | undefined
 }
+/** Where a preview was opened from: the composer draft rail or a message. */
+export type ViewerOrigin = 'composer' | 'message'
 export interface ViewerRequest {
   items: ViewerItem[]
   index: number
@@ -40,6 +42,8 @@ export interface ViewerRequest {
   source: string
   annotations: boolean
   commitAnnotations?: ((entries: CommitEntry[]) => Promise<void>) | undefined
+  /** Composer-origin previews replace the originating draft attachment on save. */
+  origin?: ViewerOrigin | undefined
   revision: number
   committing?: boolean | undefined
   commitError?: boolean | undefined
@@ -75,6 +79,7 @@ export function normalizeViewerRequest(request: Partial<ViewerRequest> | undefin
     source: typeof request?.source === 'string' ? request.source : 'dsh-image-gen',
     annotations: request?.annotations !== false,
     commitAnnotations: typeof request?.commitAnnotations === 'function' ? request.commitAnnotations : undefined,
+    ...(request?.origin === 'composer' || request?.origin === 'message' ? { origin: request.origin } : {}),
     revision: 0,
   }
 }

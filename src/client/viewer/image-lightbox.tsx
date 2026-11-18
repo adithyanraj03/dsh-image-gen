@@ -12,7 +12,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type Re
 import { Check, ChevronLeft, ChevronRight, Circle, Copy, Download, EyeOff, ListOrdered, Maximize, Minus, MoveUpRight, Pen, PenLine, PenTool, Save, Square, Trash2, Type, Undo2, X, ZoomIn, ZoomOut } from 'lucide-react'
 import { useImageTransform } from './use-image-transform.js'
 import { renderAnnotationImage, type Annotation, type CommitEntry } from './annotations.js'
-import { buildMarkupOps, MARKUP_COLORS, MARKUP_STROKES, markedFileName, nextStepNumber, renderMarkupImage, screenToNormalized, type MarkupCommitEntry, type MarkupDrawOp, type MarkupPoint, type MarkupShape, type MarkupStroke, type MarkupTool } from './markup.js'
+import { buildMarkupOps, MARKUP_COLORS, MARKUP_STROKES, markedFileName, nextStepNumber, renderMarkupImage, screenToNormalized, type MarkupCommitEntry, type MarkupCommitOutcome, type MarkupDrawOp, type MarkupPoint, type MarkupShape, type MarkupStroke, type MarkupTool } from './markup.js'
 import { copyImageBlob, downloadBlobUrl } from '../browser-image-utils.js'
 import type { ImageViewerService, ViewerAction, ViewerItem } from './viewer-service.js'
 
@@ -26,6 +26,7 @@ export const VIEWER_KEYS = [
   'igvMarkupColor', 'igvMarkupStroke', 'igvStrokeS', 'igvStrokeM', 'igvStrokeL',
   'igvMarkupUndo', 'igvMarkupClear', 'igvMarkupSave', 'igvMarkupSaveHint',
   'igvMarkupCopy', 'igvMarkupDownload', 'igvMarkupDownloaded', 'igvMarkupSaved', 'igvMarkupNoHost', 'igvMarkupBakeFailed', 'igvMarkupTextPrompt',
+  'igvMarkupReplaced', 'igvMarkupAddedFallback',
 ] as const
 export type ViewerKey = typeof VIEWER_KEYS[number]
 export type ViewerT = (key: ViewerKey, values?: Record<string, string>) => string
@@ -107,7 +108,9 @@ export interface ImageLightboxProps {
   onNext?(): void
   commitAnnotations?: ((entries: CommitEntry[]) => Promise<void>) | undefined
   /** Markup save: attach baked marked PNGs to the composer draft (no send). */
-  commitMarkup?: ((entries: MarkupCommitEntry[]) => Promise<void>) | undefined
+  commitMarkup?: ((entries: MarkupCommitEntry[]) => Promise<void | MarkupCommitOutcome>) | undefined
+  /** Composer-origin preview: Markup Save replaces the draft attachment matching item.src. */
+  draftReplace?: boolean | undefined
   onImageError?(item: ViewerItem, currentSrc: string): void
   loading?: boolean | undefined
 }
@@ -399,11 +402,11 @@ export function ImageLightbox(props: ImageLightboxProps) {
     try { blob = await bakeMarked() }
     catch { setCommitting(false); notifyMarkup(t('igvMarkupBakeFailed')); return }
     try {
-      await commitMarkup([{ item: { src: item.src, name: item.name }, blob }])
+      const outcome = await commitMarkup([{ item: { src: item.src, name: item.name }, blob, replace: props.draftReplace === true }])
       setCommitting(false)
       setMarkup(false); setMarkupShapes([]); updateMarkupDraft(undefined)
       drawingPointerRef.current = undefined
-      notifyMarkup(t('igvMarkupSaved'))
+      notifyMarkup(t(outcome === 'replaced' ? 'igvMarkupReplaced' : outcome === 'fallback' ? 'igvMarkupAddedFallback' : 'igvMarkupSaved'))
     } catch { setCommitting(false); setCommitError(true) }
   }
   const copyMarked = async (): Promise<void> => {
@@ -558,7 +561,7 @@ export function ImageLightbox(props: ImageLightboxProps) {
 }
 
 /** Standalone overlay driven by the public service (shell.overlay seat). */
-export function ViewerOverlay({ service, t, commitMarkup }: { service: ImageViewerService; t: ViewerT; commitMarkup?: ((entries: MarkupCommitEntry[]) => Promise<void>) | undefined }) {
+export function ViewerOverlay({ service, t, commitMarkup }: { service: ImageViewerService; t: ViewerT; commitMarkup?: ((entries: MarkupCommitEntry[]) => Promise<void | MarkupCommitOutcome>) | undefined }) {
   const request = useSyncExternalStore(service.subscribe, service.getSnapshot)
   const [cursor, setCursor] = useState({ revision: 0, index: 0 })
   if (!request) return null
@@ -576,6 +579,7 @@ export function ViewerOverlay({ service, t, commitMarkup }: { service: ImageView
       viewerActions={request.items[index]?.actions}
       commitAnnotations={request.commitAnnotations}
       commitMarkup={commitMarkup}
+      draftReplace={request.origin === 'composer'}
     />
   )
 }

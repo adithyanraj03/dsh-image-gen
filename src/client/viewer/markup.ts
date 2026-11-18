@@ -24,7 +24,14 @@ export interface MarkupShape {
   step?: number
 }
 /** A baked marked PNG ready for the composer-draft commit. */
-export interface MarkupCommitEntry { item: CommitItem; blob: Blob }
+export interface MarkupCommitEntry {
+  item: CommitItem
+  blob: Blob
+  /** Composer-origin save: replace the draft attachment matching `item.src`. */
+  replace?: boolean | undefined
+}
+/** How a markup save landed in the draft (drives the lightbox toast). */
+export type MarkupCommitOutcome = 'replaced' | 'added' | 'fallback'
 
 export const MARKUP_COLORS = ['#3964fe', '#ff3b30', '#ffcc00', '#34c759', '#ffffff', '#111111'] as const
 export const MARKUP_STROKES = ['S', 'M', 'L'] as const
