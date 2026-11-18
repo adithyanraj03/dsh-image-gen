@@ -57,6 +57,10 @@
 
 ![加载动画](docs/assets/generating-animation.gif)
 
+**标注（Markup）** —— 在任意预览图（含聊天栏附件）上绘制矩形、箭头、椭圆、编号步骤、涂黑、自由笔迹与文字。保存时把标记烙进原始像素、就地替换输入框附件，并附归一化 `(x%,y%)` 坐标，便于模型精确定位每个标记。
+
+![标注示例](docs/assets/markup-example.png)
+
 ---
 
 ## 自定义 `/v1/images/generations` 配置

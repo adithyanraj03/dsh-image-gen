@@ -57,6 +57,10 @@ Custom multi-provider image generation, editing, and interactive canvas studio p
 
 ![Loading animation](docs/assets/generating-animation.gif)
 
+**Markup** — draw rectangles, arrows, ellipses, numbered steps, redactions, freehand and text on any previewed image (including chat-bar attachments). Save bakes the marks into the original pixels, replaces the composer attachment in place, and appends normalized `(x%,y%)` coordinates so the model can ground each mark precisely.
+
+![Markup example](docs/assets/markup-example.png)
+
 ---
 
 ## Custom `/v1/images/generations` Configuration
