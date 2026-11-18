@@ -20,6 +20,12 @@ A [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) plugin for
 
 ## Install
 
+From npm:
+
+```sh
+dsh plugin --profile web add @adithyanraj/dsh-image-gen
+```
+
 From the GitHub release (writes the dependency and mounts the row in one step):
 
 ```sh
@@ -34,6 +40,8 @@ dsh plugin --profile web add github:adithyanraj03/dsh-image-gen#v1.0.0
 
 Restart dsh / the desktop app afterwards (the host half loads at startup). For the desktop profile use `--profile desktop`.
 
+![Loading animation](assets/generating-animation.gif)
+
 ## What it does
 
 - **Custom endpoints** — any OpenAI-compatible gateway / relay / self-hosted server via `/v1` base URL or the full `/v1/images/generations` URL; multiple named relay channels.
@@ -47,7 +55,6 @@ Restart dsh / the desktop app afterwards (the host half loads at startup). For t
 ![Studio preview](assets/studio-preview.png)
 ![Infinite canvas](assets/studio-canvas-excalidraw.png)
 ![Generate panel](assets/studio-generate-panel.png)
-![Loading animation](assets/generating-animation.gif)
 ![Markup overlay](assets/markup-overlay-ui.png)
 ![Draft with mark coordinates](assets/markup-draft-coordinates.png)
 

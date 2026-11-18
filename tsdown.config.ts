@@ -101,7 +101,7 @@ const client: UserConfig = {
     // Excalidraw lazy chunk (locales, font-subset wasm, image helpers) must
     // inline instead of becoming sibling files the loader cannot resolve.
     inlineDynamicImports: true,
-    banner: 'window.__ModuleLoader__.load({ id: "dsh-image-gen", factory: (require) => {',
+    banner: 'window.__ModuleLoader__.load({ id: "@adithyanraj/dsh-image-gen", factory: (require) => {',
     footer: 'return module.exports; } });',
     intro: 'var module = { exports: {} }; var exports = module.exports;',
   },

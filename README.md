@@ -15,6 +15,8 @@ Custom multi-provider image generation, editing, and interactive canvas studio p
 
 ---
 
+![Loading animation](docs/assets/generating-animation.gif)
+
 ## Features
 
 - **Custom `/v1/images/generations` Endpoint Support**: Configure any OpenAI-compatible gateway, reverse proxy, or self-hosted server (vLLM, LiteLLM, OneAPI, NewAPI, LocalAI, SGLang) using either the `/v1` base URL or the full `/v1/images/generations` endpoint URL.
@@ -53,10 +55,6 @@ Custom multi-provider image generation, editing, and interactive canvas studio p
 
 ![Generate panel](docs/assets/studio-generate-panel.png)
 
-**Loading animation** — the amber "picture being made" water sheet with stage, elapsed time and a progress bar, then a radial ripple-reveal into the finished image.
-
-![Loading animation](docs/assets/generating-animation.gif)
-
 **Markup** — draw rectangles, arrows, ellipses, numbered steps, redactions, freehand and text on any previewed image (including chat-bar attachments). Save bakes the marks into the original pixels, replaces the composer attachment in place, and appends normalized `(x%,y%)` coordinates so the model can ground each mark precisely.
 
 ![Markup example](docs/assets/markup-example.png)
@@ -68,6 +66,16 @@ Custom multi-provider image generation, editing, and interactive canvas studio p
 **What the model receives** — the composer draft holds the marked PNG plus one normalized-coordinate line per mark, so pixels and grounded locations arrive together.
 
 ![Draft with mark coordinates](docs/assets/markup-draft-coordinates.png)
+
+---
+
+## Install
+
+```sh
+dsh plugin --profile web add @adithyanraj/dsh-image-gen
+```
+
+Or from the GitHub release tarball / repo tag — see the [Pages site](https://adithyanraj03.github.io/dsh-image-gen/). Restart dsh / the desktop app afterwards.
 
 ---
 

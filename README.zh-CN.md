@@ -15,6 +15,8 @@
 
 ---
 
+![加载动画](docs/assets/generating-animation.gif)
+
 ## 功能
 
 - **自定义 `/v1/images/generations` 端点**：可配置任意 OpenAI 兼容网关、反向代理或自建服务（vLLM、LiteLLM、OneAPI、NewAPI、LocalAI、SGLang），既接受 `/v1` 基础 URL，也接受完整的 `/v1/images/generations` 端点 URL。
@@ -53,10 +55,6 @@
 
 ![生成面板](docs/assets/studio-generate-panel.png)
 
-**加载动画** —— 琥珀色“正在绘制”水幕，带阶段、已用时间与进度条，随后以径向涟漪揭示成品图。
-
-![加载动画](docs/assets/generating-animation.gif)
-
 **标注（Markup）** —— 在任意预览图（含聊天栏附件）上绘制矩形、箭头、椭圆、编号步骤、涂黑、自由笔迹与文字。保存时把标记烙进原始像素、就地替换输入框附件，并附归一化 `(x%,y%)` 坐标，便于模型精确定位每个标记。
 
 ![标注示例](docs/assets/markup-example.png)
@@ -68,6 +66,16 @@
 **模型收到的内容** —— 输入框草稿中包含标注后的 PNG，以及每个标记一行归一化坐标，像素与定位信息一并送达。
 
 ![草稿与标记坐标](docs/assets/markup-draft-coordinates.png)
+
+---
+
+## 安装
+
+```sh
+dsh plugin --profile web add @adithyanraj/dsh-image-gen
+```
+
+或从 GitHub release tarball / 仓库 tag 安装 —— 见 [Pages 站点](https://adithyanraj03.github.io/dsh-image-gen/)。安装后重启 dsh / 桌面端。
 
 ---
 

@@ -1,5 +1,5 @@
 {
-  "name": "dsh-image-gen",
+  "name": "@adithyanraj/dsh-image-gen",
   "version": "1.0.0",
   "description": "Custom multi-provider image generation & canvas studio for DeepSeek Harness — with custom /v1/images/generations endpoint routing.",
   "type": "module",
