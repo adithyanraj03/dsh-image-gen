@@ -384,8 +384,14 @@ export function ImageLightbox(props: ImageLightboxProps) {
     updateMarkupDraft(undefined)
   }
 
+  // After a save, the open preview shows the MARKED image in place (no close /
+  // reopen): per-item object URL + blob, also used as the base for further marks.
+  const [markedByItem, setMarkedByItem] = useState<Record<string, { url: string; blob: Blob }>>({})
+
   const readOriginalBlob = async (): Promise<Blob> => {
     if (!item) throw new Error('No image')
+    const marked = markedByItem[item.id]
+    if (marked) return marked.blob
     if (item.readBlob) return item.readBlob()
     const response = await fetch(item.src)
     if (!response.ok) throw new Error(`Image download failed: ${response.status}`)
@@ -402,10 +408,14 @@ export function ImageLightbox(props: ImageLightboxProps) {
     try { blob = await bakeMarked() }
     catch { setCommitting(false); notifyMarkup(t('igvMarkupBakeFailed')); return }
     try {
-      const outcome = await commitMarkup([{ item: { src: item.src, name: item.name }, blob, replace: props.draftReplace === true }])
+      const outcome = await commitMarkup([{ item: { src: item.src, name: item.name }, blob, replace: props.draftReplace === true, shapes: markupShapesRef.current }])
       setCommitting(false)
       setMarkup(false); setMarkupShapes([]); updateMarkupDraft(undefined)
       drawingPointerRef.current = undefined
+      // Refresh the open preview to the marked pixels in place.
+      const previous = markedByItem[item.id]
+      if (previous) URL.revokeObjectURL(previous.url)
+      setMarkedByItem(current => ({ ...current, [item.id]: { url: URL.createObjectURL(blob), blob } }))
       notifyMarkup(t(outcome === 'replaced' ? 'igvMarkupReplaced' : outcome === 'fallback' ? 'igvMarkupAddedFallback' : 'igvMarkupSaved'))
     } catch { setCommitting(false); setCommitError(true) }
   }
@@ -427,6 +437,7 @@ export function ImageLightbox(props: ImageLightboxProps) {
   }
 
   if (!item) return null
+  const displaySrc = markedByItem[item.id]?.url ?? item.src
   const showCounter = items.length > 1
   const hasPrev = props.hasPrev ?? index > 0
   const hasNext = props.hasNext ?? index < items.length - 1
@@ -522,7 +533,7 @@ export function ImageLightbox(props: ImageLightboxProps) {
         ) : null}
         <div ref={surfaceRef} className="igv-surface" data-markup={markup} onClick={addAnnotation} style={{ visibility: imageState === 'ready' ? 'visible' : 'hidden', transform: `translate3d(${transform.x}px,${transform.y}px,0) scale(${transform.zoom})` }}
           {...(markup && imageState === 'ready' ? { onPointerDown: onMarkupPointerDown, onPointerMove: onMarkupPointerMove, onPointerUp: onMarkupPointerUp, onPointerCancel: onMarkupPointerCancel, onLostPointerCapture: onMarkupPointerCancel } : {})}>
-          <img key={`${identity}:${attempt}`} ref={imageRef} className="dsh-ig-lightbox-img igv-image" src={item.src} alt={item.name} draggable={false} decoding="async"
+          <img key={`${item.id}:${displaySrc}:${attempt}`} ref={imageRef} className="dsh-ig-lightbox-img igv-image" src={displaySrc} alt={item.name} draggable={false} decoding="async"
             onLoad={() => { setImageState('ready'); measure() }}
             onError={() => { if (!item.src) return; if (onImageError) onImageError(item, item.src); else setImageState('error') }} />
           {markup && imageState === 'ready' ? <MarkupOverlay shapes={markupShapes} draft={markupDraft} width={naturalWidth} height={naturalHeight} /> : null}

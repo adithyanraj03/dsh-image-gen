@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  MARKUP_COLORS, REDACT_OPACITY, arrowHeadPoints, buildMarkupOps, imageScreenRect,
+  MARKUP_COLORS, REDACT_OPACITY, arrowHeadPoints, buildMarkupOps, describeMarkup, imageScreenRect,
   markedFileName, nextStepNumber, normalizedToScreen, screenToNormalized,
   stepContrast, stepRadius, strokePixels, textFontSize,
   type MarkupPoint, type MarkupShape, type MarkupTool,
@@ -345,5 +345,28 @@ describe('markup draft commit (shared session-pinned core)', () => {
     harness.state.current = 'session-2'
     await expect(commit([{ item: { src: 'photo.png', name: 'photo.jpg' }, annotations: [] }])).rejects.toThrow(/session changed|unavailable/i)
     expect(renders).toBe(1)
+  })
+})
+
+describe('describeMarkup model-facing coordinates', () => {
+  const shape = (tool: MarkupTool, points: MarkupPoint[], extra?: Partial<MarkupShape>): MarkupShape =>
+    ({ id: tool, tool, color: '#ff3b30', stroke: 'M', points, ...extra })
+  it('emits one normalized-coordinate line per shape with a header', () => {
+    const text = describeMarkup([
+      shape('rect', [{ x: 0.1, y: 0.2 }, { x: 0.4, y: 0.6 }]),
+      shape('arrow', [{ x: 0.123, y: 0.341 }, { x: 0.567, y: 0.789 }]),
+      shape('step', [{ x: 0.5, y: 0.5 }], { step: 2 }),
+      shape('text', [{ x: 0.25, y: 0.75 }], { text: 'spoiler' }),
+      shape('redact', [{ x: 0, y: 0 }, { x: 1, y: 1 }]),
+    ])
+    expect(text).toContain('normalized x%,y% from top-left')
+    expect(text).toContain('[mark 1] rectangle #ff3b30 bounds (10%,20%)-(40%,60%)')
+    expect(text).toContain('[mark 2] arrow #ff3b30 from (12%,34%) to (57%,79%) (head at (57%,79%))')
+    expect(text).toContain('[mark 3] step 2 at (50%,50%)')
+    expect(text).toContain('[mark 4] text "spoiler" at (25%,75%)')
+    expect(text).toContain('[mark 5] redacted region bounds (0%,0%)-(100%,100%)')
+  })
+  it('returns empty string for no shapes', () => {
+    expect(describeMarkup([])).toBe('')
   })
 })

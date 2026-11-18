@@ -29,9 +29,46 @@ export interface MarkupCommitEntry {
   blob: Blob
   /** Composer-origin save: replace the draft attachment matching `item.src`. */
   replace?: boolean | undefined
+  /** The shapes baked into `blob`, so the commit can send model-facing coordinates. */
+  shapes?: MarkupShape[] | undefined
 }
 /** How a markup save landed in the draft (drives the lightbox toast). */
 export type MarkupCommitOutcome = 'replaced' | 'added' | 'fallback'
+
+const pct = (value: number): string => `${Math.round(value * 100)}%`
+const point = (p: MarkupPoint | undefined): string => `(${pct(p?.x ?? 0)},${pct(p?.y ?? 0)})`
+function bounds(points: readonly MarkupPoint[]): string {
+  if (points.length === 0) return '(0%,0%)-(0%,0%)'
+  const xs = points.map(p => p.x)
+  const ys = points.map(p => p.y)
+  return `(${pct(Math.min(...xs))},${pct(Math.min(...ys))})-(${pct(Math.max(...xs))},${pct(Math.max(...ys))})`
+}
+
+/**
+ * Model-facing description of the baked marks: one line per shape with its tool,
+ * color and NORMALIZED coordinates (x%,y% from the top-left), so a vision model
+ * can ground "the boxed region / the arrow target" precisely instead of guessing
+ * from pixels alone. Appended to the composer draft text beside the marked PNG.
+ */
+export function describeMarkup(shapes: readonly MarkupShape[]): string {
+  if (shapes.length === 0) return ''
+  const lines = shapes.map((shape, index) => {
+    const n = index + 1
+    const a = shape.points[0]
+    const b = shape.points[1] ?? a
+    switch (shape.tool) {
+      case 'pen': return `[mark ${n}] pen ${shape.color} stroke ${shape.stroke}, ${shape.points.length} samples, bbox ${bounds(shape.points)}`
+      case 'line': return `[mark ${n}] line ${shape.color} from ${point(a)} to ${point(b)}`
+      case 'arrow': return `[mark ${n}] arrow ${shape.color} from ${point(a)} to ${point(b)} (head at ${point(b)})`
+      case 'rect': return `[mark ${n}] rectangle ${shape.color} bounds ${bounds(shape.points)}`
+      case 'ellipse': return `[mark ${n}] ellipse ${shape.color} bounds ${bounds(shape.points)}`
+      case 'step': return `[mark ${n}] step ${shape.step ?? 1} at ${point(a)}`
+      case 'redact': return `[mark ${n}] redacted region bounds ${bounds(shape.points)}`
+      case 'text': return `[mark ${n}] text "${shape.text ?? ''}" at ${point(a)}`
+    }
+  })
+  return `Markup overlay coordinates (normalized x%,y% from top-left of the image):\n${lines.join('\n')}`
+}
 
 export const MARKUP_COLORS = ['#3964fe', '#ff3b30', '#ffcc00', '#34c759', '#ffffff', '#111111'] as const
 export const MARKUP_STROKES = ['S', 'M', 'L'] as const

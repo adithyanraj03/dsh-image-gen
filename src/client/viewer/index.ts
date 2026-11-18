@@ -8,7 +8,7 @@
  */
 import { ImageViewerService } from './viewer-service.js'
 import { captureDraftHost, commitDraftFiles, commitDraftFilesReplacing, createDraftCommit, type Annotation, type CommitEntry, type ConversationLike, type SessionsLike } from './annotations.js'
-import { markedFileName, type MarkupCommitEntry, type MarkupCommitOutcome } from './markup.js'
+import { markedFileName, describeMarkup, type MarkupCommitEntry, type MarkupCommitOutcome } from './markup.js'
 import { noteText, ViewerOverlay, type ViewerT } from './image-lightbox.js'
 import { installImageClickBridge } from './composer-bridge.js'
 import { VIEWER_CSS } from './styles.js'
@@ -26,7 +26,7 @@ export { VIEWER_CSS } from './styles.js'
 export {
   MARKUP_COLORS, MARKUP_STROKES, REDACT_OPACITY, arrowHeadPoints, buildMarkupOps, drawMarkupOps,
   imageScreenRect, markedFileName, nextStepNumber, normalizedToScreen, renderMarkupImage,
-  screenToNormalized, stepContrast, stepRadius, strokePixels, textFontSize,
+  screenToNormalized, stepContrast, stepRadius, strokePixels, textFontSize, describeMarkup,
 } from './markup.js'
 export type { MarkupCommitEntry, MarkupCommitOutcome, MarkupDrawOp, MarkupGeometry, MarkupPoint, MarkupShape, MarkupStroke, MarkupTool, MarkupTransform, ScreenRect } from './markup.js'
 
@@ -84,19 +84,23 @@ export function registerViewer(ctx: ViewerCtx, t: ViewerT, readBlob: (src: strin
   // plugin loads never strands the commit on a stale session id.
   const commitMarkup = async (entries: MarkupCommitEntry[]): Promise<MarkupCommitOutcome> => {
     const markupHost = captureDraftHost(hostDeps)
+    // Send model-facing mark coordinates beside the baked PNG so the model can
+    // ground the boxes/arrows/steps precisely, not just see pixels.
+    const textFor = (entry: MarkupCommitEntry, name: string): string =>
+      entry.shapes && entry.shapes.length > 0 ? `${name}\n${describeMarkup(entry.shapes)}` : name
     // Composer-origin save replaces the originating draft attachment by src;
     // every other surface keeps the existing add-alongside batch behavior.
     const replaceEntry = entries.find(entry => entry.replace === true)
     if (replaceEntry !== undefined) {
       const name = markedFileName(replaceEntry.item.name)
       const outcome = await commitDraftFilesReplacing(markupHost, replaceEntry.item.src, [
-        { file: new File([replaceEntry.blob], name, { type: 'image/png' }), text: name },
+        { file: new File([replaceEntry.blob], name, { type: 'image/png' }), text: textFor(replaceEntry, name) },
       ])
       return outcome === 'replaced' ? 'replaced' : 'fallback'
     }
-    await commitDraftFiles(markupHost, entries.map(({ item, blob }) => {
-      const name = markedFileName(item.name)
-      return { file: new File([blob], name, { type: 'image/png' }), text: name }
+    await commitDraftFiles(markupHost, entries.map(entry => {
+      const name = markedFileName(entry.item.name)
+      return { file: new File([entry.blob], name, { type: 'image/png' }), text: textFor(entry, name) }
     }))
     return 'added'
   }
