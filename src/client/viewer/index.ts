@@ -78,10 +78,12 @@ export function registerViewer(ctx: ViewerCtx, t: ViewerT, readBlob: (src: strin
     readBlob,
     formatNotes: (annotations: Annotation[]) => noteText(annotations, t),
   })
-  // Markup save reuses the same session-pinned draft machinery: the lightbox
-  // bakes the PNG, this attaches it as `<base>-marked.png` without sending.
-  const markupHost = captureDraftHost(hostDeps)
+  // Markup save reuses the same draft machinery: the lightbox bakes the PNG,
+  // this attaches it as `<base>-marked.png` without sending. The destination is
+  // captured at SAVE time (not registration) so switching sessions after the
+  // plugin loads never strands the commit on a stale session id.
   const commitMarkup = async (entries: MarkupCommitEntry[]): Promise<MarkupCommitOutcome> => {
+    const markupHost = captureDraftHost(hostDeps)
     // Composer-origin save replaces the originating draft attachment by src;
     // every other surface keeps the existing add-alongside batch behavior.
     const replaceEntry = entries.find(entry => entry.replace === true)

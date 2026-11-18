@@ -289,11 +289,12 @@ describe('markup draft commit (shared session-pinned core)', () => {
     expect(harness.added).toEqual([])
   })
 
-  it('refuses while the composer is busy or holds references', async () => {
+  it('refuses while the composer is busy, but allows existing references', async () => {
     const busy = hostHarness({ phase: 'streaming' })
     await expect(commitDraftFiles(busy.host, [markedFile()])).rejects.toThrow(/busy/i)
     const refs = hostHarness({ occurrences: [{ kind: 'mention' }] })
-    await expect(commitDraftFiles(refs.host, [markedFile()])).rejects.toThrow(/busy|references/i)
+    await commitDraftFiles(refs.host, [markedFile()])
+    expect(refs.added.length).toBe(1)
   })
 
   it('releases created drafts when the composer refuses the add', async () => {

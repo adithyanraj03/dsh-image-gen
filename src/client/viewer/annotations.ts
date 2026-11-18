@@ -145,7 +145,10 @@ export async function commitDraftFiles(host: DraftCommitHost, files: DraftFile[]
   if (currentSessionId(sessions.list.getSnapshot()) !== sessionId) throw new Error('Session changed')
   const input = conversation.input.for(sessions.scope(sessionId))
   const state = input.state.getSnapshot()
-  if (state.phase !== 'plain' || state.occurrences?.length) throw new Error('Composer busy or contains references')
+  // Only a non-editable phase blocks a commit. Existing attachments/references
+  // are normal (the composer-replace flow operates on a composer that already
+  // holds the source image) and must not refuse the add.
+  if (state.phase !== 'plain') throw new Error('Composer busy')
   const modern = typeof conversation.createDrafts === 'function'
   const add = modern ? input.addAttachments : input.addImages
   const release = modern ? conversation.releaseDraftAttachments : conversation.releaseDraftImages
@@ -201,7 +204,7 @@ export async function commitDraftFilesReplacing(host: DraftCommitHost, src: stri
   if (files.length === 0) return 'added'
   const input = conversation.input.for(sessions.scope(sessionId))
   const state = input.state.getSnapshot()
-  if (state.phase !== 'plain' || state.occurrences?.length) throw new Error('Composer busy or contains references')
+  if (state.phase !== 'plain') throw new Error('Composer busy')
   const attachments = conversation.resolveDraftAttachments?.(state.attachmentIds ?? []) ?? []
   const matched = matchDraftAttachment(attachments, src)
   if (matched && typeof input.removeAttachment === 'function' && input.removeAttachment(matched.id)) {

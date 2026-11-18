@@ -327,12 +327,12 @@ describe('commitDraftFilesReplacing (composer origin)', () => {
     expect(harness.order.some(entry => entry.startsWith('release:'))).toBe(false)
   })
 
-  it('refuses while the composer is busy or holds references, without removing', async () => {
+  it('refuses while the composer is busy, without removing; references do not block', async () => {
     const busy = replaceHarness({ attachments: [imageAttachment('att-1', 'blob:photo')], phase: 'submitting' })
     await expect(commitDraftFilesReplacing(busy.host, 'blob:photo', [markedFile()])).rejects.toThrow(/busy/i)
     expect(busy.order.some(entry => entry.startsWith('remove:'))).toBe(false)
     const refs = replaceHarness({ attachments: [imageAttachment('att-1', 'blob:photo')], occurrences: [{ kind: 'mention' }] })
-    await expect(commitDraftFilesReplacing(refs.host, 'blob:photo', [markedFile()])).rejects.toThrow(/busy|references/i)
+    expect(await commitDraftFilesReplacing(refs.host, 'blob:photo', [markedFile()])).toBe('replaced')
   })
 
   it('refuses when the session changed since capture', async () => {
