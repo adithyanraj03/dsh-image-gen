@@ -1,0 +1,13 @@
+# GitHub Pages configuration.
+#
+# Settings -> Pages -> Deploy from a branch -> main -> /docs; the site builds
+# from index.md on every push. `theme:` must be a GitHub-native theme.
+title: dsh-image-gen
+description: >-
+  Multi-provider image generation & editing plugin for DeepSeek Harness with an
+  Excalidraw infinite-canvas studio and a pro zoom/annotate/markup image viewer.
+theme: jekyll-theme-cayman
+show_downloads: false
+exclude:
+  - Gemfile
+  - Gemfile.lock

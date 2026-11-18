@@ -13,3 +13,7 @@ lib/
 
 # banner composition scratch (resized icon/screenshots)
 docs/assets/.bannertmp/
+
+# Local publishing notes — kept out of the public repo
+PUBLISHING.md
+MARKETPLACE.md
