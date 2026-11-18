@@ -146,6 +146,13 @@ export function ImageLightbox(props: ImageLightboxProps) {
   const [copyFailed, setCopyFailed] = useState(false)
   const [committing, setCommitting] = useState(false)
   const [commitError, setCommitError] = useState(false)
+  const [commitReason, setCommitReason] = useState('')
+  // A refused commit banner must not linger forever nor hide WHY it refused.
+  useEffect(() => {
+    if (!commitError) return
+    const timer = window.setTimeout(() => { setCommitError(false); setCommitReason('') }, 8000)
+    return () => window.clearTimeout(timer)
+  }, [commitError])
   const [annotationsByImage, setAnnotationsByImage] = useState<Record<string, Annotation[]>>(() => service?.getAnnotationsSnapshot() ?? {})
   const annotationsRef = useRef(annotationsByImage)
   annotationsRef.current = annotationsByImage
@@ -223,9 +230,9 @@ export function ImageLightbox(props: ImageLightboxProps) {
     if (committingRef.current) return
     const entries = changedEntries()
     if (!discard && entries.length && commitAnnotations) {
-      setCommitting(true); setCommitError(false)
+      setCommitting(true); setCommitError(false); setCommitReason('')
       try { await commitAnnotations(entries); setCommitting(false); onClose() }
-      catch { setCommitting(false); setCommitError(true) }
+      catch (error) { setCommitting(false); setCommitError(true); setCommitReason(error instanceof Error ? error.message : String(error)) }
     } else onClose()
   }, [changedEntries, commitAnnotations, onClose])
 
@@ -403,7 +410,7 @@ export function ImageLightbox(props: ImageLightboxProps) {
   const saveMarkup = async (): Promise<void> => {
     if (committingRef.current || !item || markupShapesRef.current.length === 0) return
     if (!commitMarkup) { notifyMarkup(t('igvMarkupNoHost')); return }
-    setCommitting(true); setCommitError(false)
+    setCommitting(true); setCommitError(false); setCommitReason('')
     let blob: Blob
     try { blob = await bakeMarked() }
     catch { setCommitting(false); notifyMarkup(t('igvMarkupBakeFailed')); return }
@@ -417,7 +424,7 @@ export function ImageLightbox(props: ImageLightboxProps) {
       if (previous) URL.revokeObjectURL(previous.url)
       setMarkedByItem(current => ({ ...current, [item.id]: { url: URL.createObjectURL(blob), blob } }))
       notifyMarkup(t(outcome === 'replaced' ? 'igvMarkupReplaced' : outcome === 'fallback' ? 'igvMarkupAddedFallback' : 'igvMarkupSaved'))
-    } catch { setCommitting(false); setCommitError(true) }
+    } catch (error) { setCommitting(false); setCommitError(true); setCommitReason(error instanceof Error ? error.message : String(error)) }
   }
   const copyMarked = async (): Promise<void> => {
     if (committingRef.current || markupShapesRef.current.length === 0) return
@@ -452,6 +459,7 @@ export function ImageLightbox(props: ImageLightboxProps) {
       {committing || commitError ? (
         <div className="igv-draft-status" role="status">
           {t(committing ? 'igvAddingDraft' : 'igvDraftFailed')}
+          {commitError && commitReason !== '' ? <span className="igv-draft-reason"> ({commitReason})</span> : null}
           {commitError ? <button className="igv-btn" type="button" onClick={() => { void doClose(true) }}>{t('igvCloseWithoutDraft')}</button> : null}
         </div>
       ) : markupNotice !== undefined ? (
