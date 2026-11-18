@@ -61,6 +61,14 @@
 
 ![标注示例](docs/assets/markup-example.png)
 
+**灯箱中的标注** —— 在图上绘制矩形、箭头与编号步骤；工具栏在 *Mark region*（备注）与 *Markup*（绘制）之间切换，旁附适应/100% 缩放与复制备注。
+
+![标注界面](docs/assets/markup-overlay-ui.png)
+
+**模型收到的内容** —— 输入框草稿中包含标注后的 PNG，以及每个标记一行归一化坐标，像素与定位信息一并送达。
+
+![草稿与标记坐标](docs/assets/markup-draft-coordinates.png)
+
 ---
 
 ## 自定义 `/v1/images/generations` 配置

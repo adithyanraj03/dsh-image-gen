@@ -61,6 +61,14 @@ Custom multi-provider image generation, editing, and interactive canvas studio p
 
 ![Markup example](docs/assets/markup-example.png)
 
+**Markup in the lightbox** — rectangle, arrow and a numbered step drawn over the image; the toolbar switches between *Mark region* (notes) and *Markup* (draw), with fit/100% zoom and copy-notes alongside.
+
+![Markup overlay UI](docs/assets/markup-overlay-ui.png)
+
+**What the model receives** — the composer draft holds the marked PNG plus one normalized-coordinate line per mark, so pixels and grounded locations arrive together.
+
+![Draft with mark coordinates](docs/assets/markup-draft-coordinates.png)
+
 ---
 
 ## Custom `/v1/images/generations` Configuration
